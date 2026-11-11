@@ -1,4 +1,4 @@
-// Viva ISA compiler: stage inputs and outputs (B1-B11), FAU and sysvals, following the v9 ABI that Gallium's
+// Mapple ISA compiler: stage inputs and outputs (B1-B11), FAU and sysvals, following the v9 ABI that Gallium's
 // Panfrost driver expects (docs/ISA-ABI-V9.md).
 //
 // Vertex (IDVS, malloc mode): attributes with LD_ATTR_IMM (table 1, index = [[attribute(n)]], which is the vertex

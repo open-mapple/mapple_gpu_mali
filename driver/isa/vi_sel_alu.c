@@ -1,4 +1,4 @@
-// Viva ISA compiler: arithmetic, comparisons, casts, vectors and the math library (E1-E13, A11).
+// Mapple ISA compiler: arithmetic, comparisons, casts, vectors and the math library (E1-E13, A11).
 //
 // 32-bit values map to one Valhall instruction per component. Half floats (E5) use the packed v2f16 instructions
 // two lanes at a time where Valhall has them (add, mul, fma, min, max, neg, abs, compare/select via CSEL.v2f16,

@@ -1,7 +1,7 @@
-// CoreAnimation's own Metal renderer (CARenderer, the engine of iOS's render server in backboardd) on the Viva
+// CoreAnimation's own Metal renderer (CARenderer, the engine of iOS's render server in backboardd) on the Mapple
 // driver: a layer tree typical of iOS UI is composed on our device (llvmpipe or Panfrost-on-mock) and on the Mac's
-// real GPU, and the two frames are compared. PNGs go to /tmp/vmg-ca-{viva,ref}.png.
-// Usage: ca [frames [OUT.png]]          (phone: writes only our frame, default /tmp/vmg-ca-viva.png)
+// real GPU, and the two frames are compared. PNGs go to /tmp/vmg-ca-{mapple,ref}.png.
+// Usage: ca [frames [OUT.png]]          (phone: writes only our frame, default /tmp/vmg-ca-mapple.png)
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
@@ -66,7 +66,7 @@ static CALayer *scene(void) {
 
     CATextLayer *text = [CATextLayer layer];         // text (glyph atlas)
     text.frame = CGRectMake(150, 30, 160, 80);
-    text.string = @"Viva Metal\nMali-G57";
+    text.string = @"Mapple Metal\nMali-G57";
     text.fontSize = 22;
     text.foregroundColor = rgb(0.1, 0.1, 0.15, 1);
     text.contentsScale = 2;
@@ -343,12 +343,12 @@ static NSData *render(id<MTLDevice> dev, int frames, NSString *png) {
 
 int main(int argc, char **argv) { @autoreleasepool {
     int frames = argc > 1 ? atoi(argv[1]) : 2;
-    id<MTLDevice> viva = TSMtlCreateDevice(), ref = MTLCreateSystemDefaultDevice();
+    id<MTLDevice> ours = TSMtlCreateDevice(), ref = MTLCreateSystemDefaultDevice();
 #if TARGET_OS_IPHONE
     ref = nil;   // on the phone the system device is ours: only our frame, to look at
 #endif
-    printf("viva: %s / reference: %s\n", viva.name.UTF8String, ref.name.UTF8String);
-    NSData *a = render(viva, frames, argc > 2 ? [NSString stringWithUTF8String:argv[2]] : @"/tmp/vmg-ca-viva.png");
+    printf("Open Mapple: %s / reference: %s\n", ours.name.UTF8String, ref.name.UTF8String);
+    NSData *a = render(ours, frames, argc > 2 ? [NSString stringWithUTF8String:argv[2]] : @"/tmp/vmg-ca-mapple.png");
     NSData *b = ref ? render(ref, frames, @"/tmp/vmg-ca-ref.png") : nil;
     if (!b) { printf("no reference device\n"); return 0; }
     const uint8_t *pa = a.bytes, *pb = b.bytes;
@@ -360,7 +360,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         if (d > 64) big++;
         if (!pa[i * 4 + 3]) blank++;
     }
-    printf("pixels differing by >8: %.2f%%, by >64: %.2f%%, transparent in viva: %.2f%%\n",
+    printf("pixels differing by >8: %.2f%%, by >64: %.2f%%, transparent in ours: %.2f%%\n",
            100.0 * off / (W * H), 100.0 * big / (W * H), 100.0 * blank / (W * H));
     return 0;
 } }

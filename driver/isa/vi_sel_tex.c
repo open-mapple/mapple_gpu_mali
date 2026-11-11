@@ -1,4 +1,4 @@
-// Viva ISA compiler: textures and samplers (D1-D9).
+// Mapple ISA compiler: textures and samplers (D1-D9).
 //
 // Valhall texturing: one message instruction (TEX_SINGLE / TEX_FETCH / TEX_GATHER, TEX_GRADIENT for explicit
 // gradients) with a 64-bit descriptor operand and the coordinates in staging registers, in the order

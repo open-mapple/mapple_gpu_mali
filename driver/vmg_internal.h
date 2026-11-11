@@ -1,4 +1,4 @@
-// Viva Metal - Gallium back-end internals shared by the vmg_*.c files (never included by Objective-C).
+// Mapple Metal - Gallium back-end internals shared by the vmg_*.c files (never included by Objective-C).
 #pragma once
 #include "vmg.h"
 #include <pthread.h>

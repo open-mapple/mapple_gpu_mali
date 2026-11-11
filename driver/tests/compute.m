@@ -1,4 +1,4 @@
-// Compute on the Viva Metal driver: buffers, threadgroup memory + barriers, atomics, texture writes, dispatchThreads
+// Compute on the Mapple Metal driver: buffers, threadgroup memory + barriers, atomics, texture writes, dispatchThreads
 // (non-uniform grid), threadgroup arguments, setBytes. Runs on llvmpipe on the Mac.
 #import <Metal/Metal.h>
 #include <stdio.h>

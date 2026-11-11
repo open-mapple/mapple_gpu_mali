@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
-	<string>VivaMTLDriver</string>
+	<string>MappleMTLDriver</string>
 	<key>CFBundleIdentifier</key>
-	<string>org.viva.VivaMTLDriver</string>
+	<string>org.openmapple.MappleMTLDriver</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>VivaMTLDriver</string>
+	<string>MappleMTLDriver</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>

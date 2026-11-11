@@ -1,4 +1,4 @@
-// Viva ISA compiler: instruction selection driver. AIR (LLVM IR, after vmg_air_module_load) -> Valhall IR (vi.h).
+// Mapple ISA compiler: instruction selection driver. AIR (LLVM IR, after vmg_air_module_load) -> Valhall IR (vi.h).
 //
 // Control flow (A2): LLVM's blocks are laid out in reverse post-order (loops reducible: back edges are the only
 // backward jumps), so the hardware's reconvergence at .reconverge points (vi_flow.c) sees structured-enough code.

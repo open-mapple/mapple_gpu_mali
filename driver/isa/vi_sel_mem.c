@@ -1,4 +1,4 @@
-// Viva ISA compiler: memory (C1-C10). Pointers are (memory, byte offset) as on the NIR path:
+// Mapple ISA compiler: memory (C1-C10). Pointers are (memory, byte offset) as on the NIR path:
 //   [[buffer(n)]]          SSBO n (table 6): loads LD_PKA.iN offset, handle; stores/atomics LEA_PKA -> address
 //   small constant buffers constant buffer 0's push window (C2): constant offsets are pushed FAU words
 //   system values header   constant buffer 0 (C3): pushed words

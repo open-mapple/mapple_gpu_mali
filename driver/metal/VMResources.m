@@ -1,4 +1,4 @@
-// Viva Metal - buffers, textures, samplers and depth/stencil states on vmg.
+// Mapple Metal - buffers, textures, samplers and depth/stencil states on vmg.
 // Buffers live in GPU-visible memory mapped persistently into the process: -contents is that mapping, no copies
 // (unlike metal-shim's GL path). Textures are Gallium resources; CPU access (replaceRegion, getBytes) goes through
 // the GPU queue, ordered after the work submitted before it.

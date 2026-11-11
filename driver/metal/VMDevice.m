@@ -1,4 +1,4 @@
-// Viva Metal - the device. _MTLDevice implements libraries, functions and family queries; we supply the driver part
+// Mapple Metal - the device. _MTLDevice implements libraries, functions and family queries; we supply the driver part
 // (resources, queues, pipelines, limits) on vmg (Gallium: llvmpipe on the Mac, Panfrost on the phone).
 //
 // Creation: Metal.framework on iOS calls -initWithAcceleratorPort: on the class named by the kernel service's
@@ -83,10 +83,10 @@ static const void *const VMGPUQueueKey = &VMGPUQueueKey;
     const vmg_device_info *info = vmg_device_get_info(_vmg);
     _name = [NSString stringWithUTF8String:info->name];
     // Every frame's replay and submits run here: interactive work (it ran at whatever QoS the blocks carried).
-    _gpuQueue = dispatch_queue_create("com.viva.metal.gpu",
+    _gpuQueue = dispatch_queue_create("org.openmapple.metal.gpu",
         dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
     dispatch_queue_set_specific(_gpuQueue, VMGPUQueueKey, (__bridge void *)self, NULL);
-    _completionQueue = dispatch_queue_create("com.viva.metal.completion",
+    _completionQueue = dispatch_queue_create("org.openmapple.metal.completion",
         dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
     [self fillLimits];
     [self initGPUFamilySupport];
@@ -220,7 +220,7 @@ static NSDictionary<NSString *, NSNumber *> *VMLimitOffsets(Ivar ivar, size_t *s
 // precompiled pipeline matches, everything is compiled from AIR.
 typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDeviceArch;
 - (const VMTargetDeviceArch *)targetDeviceInfo {
-    static const VMTargetDeviceArch arch = { 0, 0, "viva_mali_g57" };
+    static const VMTargetDeviceArch arch = { 0, 0, "mapple_mali_g57" };
     return &arch;
 }
 - (NSString *)familyName { return @"Mali"; }
@@ -231,7 +231,7 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
 - (uint64_t)registryID {
     uint64_t id = 0;
     if (_accelerator) IORegistryEntryGetRegistryEntryID(_accelerator, &id);
-    return id ? id : 0x5649564147505531ull;   // 'VIVAGPU1'
+    return id ? id : 0x4d41504c47505531ull;   // 'MAPLGPU1'
 }
 - (unsigned int)acceleratorPort { return _accelerator; }
 - (uint64_t)dedicatedMemorySize { return 0; }
@@ -335,7 +335,7 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
 static BOOL VMStrictFailure(NSString *failure, NSError **error) {
     const char *strict = getenv("VMG_ISA_STRICT"), *isa = getenv("VMG_ISA");
     if (!failure || !strict || *strict == '0' || !isa || *isa == '0') return NO;
-    if (error) *error = [NSError errorWithDomain:@"VivaMetal" code:1 userInfo:@{ NSLocalizedDescriptionKey : failure }];
+    if (error) *error = [NSError errorWithDomain:@"MappleMetal" code:1 userInfo:@{ NSLocalizedDescriptionKey : failure }];
     return YES;
 }
 

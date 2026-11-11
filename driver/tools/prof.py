@@ -3,7 +3,7 @@
 
   prof.py SAMPLES [IMAGE=BINARY ...] [--thread N] [--top K]
 
-IMAGE=BINARY symbolicates that image with atos (e.g. VivaMTLDriver=out/VivaMTLDriver.bundle/VivaMTLDriver); other
+IMAGE=BINARY symbolicates that image with atos (e.g. MappleMTLDriver=out/MappleMTLDriver.bundle/MappleMTLDriver); other
 images stay image+offset. Prints, per thread with samples outside the kernel's waits, the functions by self time and
 by inclusive time (percent of that thread's samples)."""
 import collections

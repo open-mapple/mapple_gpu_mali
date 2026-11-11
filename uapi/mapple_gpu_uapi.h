@@ -1,4 +1,4 @@
-// Viva GPU: interface between the XNU driver (VivaGPUAccelerator, fork/xnu/patches/01xx-viva-gpu-*) and userspace
+// Mapple GPU: interface between the XNU driver (MappleGPUAccelerator, fork/xnu/patches/01xx-viva-gpu-*) and userspace
 // (vgpu/, used by Mesa's Panfrost through libdrm-xnu and by the Metal driver). Shared by C (userspace) and C++ (kernel).
 //
 // Model: the semantics of Linux's DRM_PANFROST_* ioctls and DRM syncobjs, so Mesa's Panfrost needs no logic changes.
@@ -16,7 +16,7 @@
 #pragma once
 #include <stdint.h>
 
-#define VGPU_SERVICE_CLASS   "VivaGPUAccelerator"   // subclass of IOAcceleratorES (Metal matches that class)
+#define VGPU_SERVICE_CLASS   "MappleGPUAccelerator"   // subclass of IOAcceleratorES (Metal matches that class)
 #define VGPU_CLIENT_TYPE     0x76677075u           // 'vgpu'
 #define VGPU_UAPI_MAJOR      1
 #define VGPU_UAPI_MINOR      2
@@ -43,16 +43,16 @@ enum vgpu_selector {
     VGPU_SEL_SYNCOBJ_WAIT,          // struct vgpu_syncobj_wait         (drm_syncobj_wait)
     VGPU_SEL_SYNCOBJ_RESET,         // struct vgpu_syncobj_array        (drm_syncobj_array)
     VGPU_SEL_SYNCOBJ_SIGNAL,        // struct vgpu_syncobj_array        (drm_syncobj_array)
-    VGPU_SEL_IMPORT_IOSURFACE,      // struct vgpu_import_iosurface     (Viva only)
+    VGPU_SEL_IMPORT_IOSURFACE,      // struct vgpu_import_iosurface     (Mapple only)
     VGPU_SEL_SYNC_BO,               // struct vgpu_sync_bo              (drm_panfrost_sync_bo: CPU cache maintenance)
     VGPU_SEL_QUERY_BO_INFO,         // struct vgpu_query_bo_info        (drm_panfrost_query_bo_info)
     VGPU_SEL_JM_CTX_CREATE,         // struct vgpu_jm_ctx               (drm_panfrost_jm_ctx_create; one context only)
     VGPU_SEL_JM_CTX_DESTROY,        // struct vgpu_jm_ctx               (drm_panfrost_jm_ctx_destroy)
-    VGPU_SEL_SYNCOBJ_TRANSFER,      // struct vgpu_syncobj_transfer     (Viva: dst takes src's current fence; stands in
+    VGPU_SEL_SYNCOBJ_TRANSFER,      // struct vgpu_syncobj_transfer     (Mapple: dst takes src's current fence; stands in
                                     //  for sync-file export/import, which XNU lacks)
-    VGPU_SEL_IMPORT_USERPTR,        // struct vgpu_import_userptr       (Viva: newBufferWithBytesNoCopy; pages wired)
-    VGPU_SEL_SUBMIT_BATCH,          // struct vgpu_submit_batch         (Viva, minor >= 2: N SUBMITs in one call)
-    VGPU_SEL_SURFACE_PROMISE,       // struct vgpu_surface_promise      (Viva, minor >= 2: K0i)
+    VGPU_SEL_IMPORT_USERPTR,        // struct vgpu_import_userptr       (Mapple: newBufferWithBytesNoCopy; pages wired)
+    VGPU_SEL_SUBMIT_BATCH,          // struct vgpu_submit_batch         (Mapple, minor >= 2: N SUBMITs in one call)
+    VGPU_SEL_SURFACE_PROMISE,       // struct vgpu_surface_promise      (Mapple, minor >= 2: K0i)
     VGPU_SEL_COUNT
 };
 

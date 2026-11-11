@@ -1,5 +1,5 @@
 // IOKit user API: the iOS SDK ships IOKit.framework without headers. When <IOKit/IOKitLib.h> is missing, declare
-// the few functions and constants the Viva GPU client and the Metal driver use (stable since iOS 2 / macOS 10.0).
+// the few functions and constants the Mapple GPU client and the Metal driver use (stable since iOS 2 / macOS 10.0).
 #pragma once
 #include <mach/mach.h>
 #include <stdint.h>

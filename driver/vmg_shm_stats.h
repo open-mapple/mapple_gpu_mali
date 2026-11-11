@@ -45,7 +45,7 @@ typedef struct {
     uint64_t isa_fallbacks;          // functions that went back to the NIR path
     uint64_t isa_compile_us;         // total ISA compile time
     char     isa_last_fallback[96];  // "<function>: <first unsupported operation / disabled feature>"
-    uint32_t gpu_product_id;         // 0x9093 on the Mali-G57 MC2 (Viva Manager's compatibility check)
+    uint32_t gpu_product_id;         // 0x9093 on the Mali-G57 MC2 (Mapple Manager's compatibility check)
 
     // Version 3: draw bounds (P4) and clear draws (P5) of docs/ANALISI-PRESTAZIONI-2026-11-06.md.
     uint64_t bounded_draws;          // draws given a scissor from their vertices

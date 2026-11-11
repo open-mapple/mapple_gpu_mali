@@ -1,4 +1,4 @@
-// Viva ISA compiler: SIMD-group and quad functions (F1-F4) and derivatives (E12).
+// Mapple ISA compiler: SIMD-group and quad functions (F1-F4) and derivatives (E12).
 //
 // Valhall warps are 16 lanes (the Metal SIMD-group). CLPER reads a register of another lane (lane index, or
 // lane ^ mask) inside a group of 2/4/8/16 lanes, with a chosen value for inactive lanes; WMASK turns a per-lane

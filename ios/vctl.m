@@ -1,4 +1,4 @@
-// vctl: drives the phone's UI from the USB link (viva-link.py run -- /private/var/root/viva-tests/vctl ...), so the
+// vctl: drives the phone's UI from the USB link (mapple-link.py run -- /private/var/root/mapple-dev/vctl ...), so the
 // driver can be tested on real screens without anyone holding the phone.
 //   vctl open BUNDLE-ID              launch / bring an app to the front (com.apple.Preferences, ...)
 //   vctl tap X Y                     one finger, X Y in 0..1 of the screen (portrait, origin top left)

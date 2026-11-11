@@ -1,4 +1,4 @@
-// Viva ISA compiler: instruction selection from AIR (LLVM IR) to Valhall (internal).
+// Mapple ISA compiler: instruction selection from AIR (LLVM IR) to Valhall (internal).
 #pragma once
 #include "vi.h"
 #include "vmg_isa.h"

@@ -1,4 +1,4 @@
-// Viva Metal - minimal LLVM C API binding, resolved at runtime from the
+// Mapple Metal - minimal LLVM C API binding, resolved at runtime from the
 // system libLLVM (macOS: GPUCompiler.framework; iOS 16: /usr/lib/libLLVM.dylib; both in the dyld shared cache). No llvm-c
 // headers ship with the Command Line Tools, so the subset we use is declared here.
 // Enum values are those of the stable LLVM C API.

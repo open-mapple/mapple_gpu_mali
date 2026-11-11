@@ -1,4 +1,4 @@
-// Viva Metal - Gallium back-end: device, resources, state objects, shaders and pipelines (see vmg.h).
+// Mapple Metal - Gallium back-end: device, resources, state objects, shaders and pipelines (see vmg.h).
 #include "vmg_internal.h"
 #include <errno.h>
 #include <limits.h>
@@ -46,7 +46,7 @@ static bool rasterizer_equal(const void *a, const void *b) { return !memcmp(a, b
 static void load_env_file(void)
 {
     // In the bundle first: every process that loads the driver may read it (backboardd's sandbox may not reach /var/root).
-    FILE *f = fopen("/System/Library/Extensions/VivaMTLDriver.bundle/vmg.env", "r");
+    FILE *f = fopen("/System/Library/Extensions/MappleMTLDriver.bundle/vmg.env", "r");
     if (!f) f = fopen("/private/var/root/viva-tests/vmg.env", "r");
     if (!f) return;
     char line[256];

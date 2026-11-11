@@ -1,4 +1,4 @@
-# Viva Metal driver (macOS build for tests: llvmpipe, and Panfrost on the vgpu mock).
+# Mapple Metal driver (macOS build for tests: llvmpipe, and Panfrost on the vgpu mock).
 # Needs ../mesa/out/macos (mesa/build.sh macos).
 CC        = clang
 MESA      = ../mesa/out/macos
@@ -47,24 +47,24 @@ M_HDR     = metal/VMPrivate.h metal/TSLog.h vmg.h
 OBJC      = -fobjc-arc -O1 -g -Wall -Wno-unused-function -Wno-deprecated-declarations -Imetal -DTS_SOURCE_DIR=\"$(abspath $(SHIM))\"
 FRAMEWORKS = -framework Foundation -framework Metal -framework IOSurface -framework IOKit -framework QuartzCore -framework CoreGraphics
 
-$(OUT)/libVivaMetal.dylib: $(M_DRV) $(M_HDR) $(OUT)/libvmg.a
-	@$(CC) $(OBJC) -dynamiclib -install_name @rpath/libVivaMetal.dylib $(M_DRV) $(OUT)/libvmg.a $(MESA_LD) $(FRAMEWORKS) -o $@
+$(OUT)/libMappleMetal.dylib: $(M_DRV) $(M_HDR) $(OUT)/libvmg.a
+	@$(CC) $(OBJC) -dynamiclib -install_name @rpath/libMappleMetal.dylib $(M_DRV) $(OUT)/libvmg.a $(MESA_LD) $(FRAMEWORKS) -o $@
 
 SHIM_TESTS = phase1 phase3 translate uploads
-$(OUT)/phase3: $(SHIM)/tests/phase2.m $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) -DTS_TRANSLATED -I$(SHIM)/src $< -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
-$(OUT)/phase1 $(OUT)/translate $(OUT)/uploads: $(OUT)/%: $(SHIM)/tests/%.m $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) -I$(SHIM)/src $< -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
+$(OUT)/phase3: $(SHIM)/tests/phase2.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) -DTS_TRANSLATED -I$(SHIM)/src $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
+$(OUT)/phase1 $(OUT)/translate $(OUT)/uploads: $(OUT)/%: $(SHIM)/tests/%.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) -I$(SHIM)/src $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
 
-metal: $(OUT)/libVivaMetal.dylib $(addprefix $(OUT)/,$(SHIM_TESTS)) $(OUT)/compute $(OUT)/ca $(OUT)/isatest $(OUT)/bounds
+metal: $(OUT)/libMappleMetal.dylib $(addprefix $(OUT)/,$(SHIM_TESTS)) $(OUT)/compute $(OUT)/ca $(OUT)/isatest $(OUT)/bounds
 test-metal: metal
 	@for t in $(SHIM_TESTS); do echo "== $$t (llvmpipe)"; $(OUT)/$$t | tail -2 || exit 1; done
-$(OUT)/compute: tests/compute.m $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) $< -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
-$(OUT)/bounds: tests/bounds.m $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) $< -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
-$(OUT)/ca: tests/ca.m $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) $< -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework ImageIO -framework CoreText -framework UniformTypeIdentifiers -o $@
+$(OUT)/compute: tests/compute.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
+$(OUT)/bounds: tests/bounds.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
+$(OUT)/ca: tests/ca.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework ImageIO -framework CoreText -framework UniformTypeIdentifiers -o $@
 # ISA compiler test cases (tests/isa_cases.m, also used by Viva Manager). On llvmpipe: `isatest -mode nir`.
-$(OUT)/isatest: tests/isatest.m tests/isa_cases.m tests/isa_cases.h $(OUT)/libVivaMetal.dylib
-	@$(CC) $(OBJC) tests/isatest.m tests/isa_cases.m -L$(OUT) -lVivaMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
+$(OUT)/isatest: tests/isatest.m tests/isa_cases.m tests/isa_cases.h $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) tests/isatest.m tests/isa_cases.m -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@

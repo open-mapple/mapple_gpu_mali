@@ -1,4 +1,4 @@
-// Viva ISA compiler: liveness and register allocation.
+// Mapple ISA compiler: liveness and register allocation.
 //
 // Linear scan over the final block layout. Each virtual register gets one interval (the hull of every point where
 // it is live), so values live around a loop keep their register for the whole loop. Multi-word registers take

@@ -1,4 +1,4 @@
-// Viva ISA compiler: machine IR for the direct AIR -> Valhall v9 (Mali-G57) path.
+// Mapple ISA compiler: machine IR for the direct AIR -> Valhall v9 (Mali-G57) path.
 //
 // The IR is Valhall itself: every instruction is an opcode of Arm's ISA description (va_v9_gen.h) with its fields,
 // plus virtual registers that register allocation turns into r0-r63. There is no intermediate language between

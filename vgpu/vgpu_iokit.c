@@ -1,4 +1,4 @@
-// Viva GPU: the real kernel driver through IOKit (VGPU_BACKEND=iokit, default on iOS). See uapi/viva_gpu_uapi.h.
+// Mapple GPU: the real kernel driver through IOKit (VGPU_BACKEND=iokit, default on iOS). See uapi/mapple_gpu_uapi.h.
 #include "vgpu.h"
 #include <errno.h>
 #include <pthread.h>

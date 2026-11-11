@@ -1,4 +1,4 @@
-// Viva Metal - Gallium back-end: the C interface between the Metal driver (Objective-C, VM*.m) and Mesa
+// Mapple Metal - Gallium back-end: the C interface between the Metal driver (Objective-C, VM*.m) and Mesa
 // (Gallium + NIR, vmg_*.c). Mesa headers stay out of the Objective-C side.
 //
 // Threading: resource and state-object creation may happen on any thread (the screen is thread safe); everything

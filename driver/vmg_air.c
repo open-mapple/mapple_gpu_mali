@@ -1,4 +1,4 @@
-// Viva Metal - AIR (Metal's LLVM IR) -> NIR translator.
+// Mapple Metal - AIR (Metal's LLVM IR) -> NIR translator.
 //
 // Input: the bitcode Metal.framework keeps in every MTLFunction, parsed with the system libLLVM (vmg_llvm.h) and
 // cleaned with LLVM passes (inline, sroa, instcombine, simplifycfg, lowerswitch), as in metal-shim.

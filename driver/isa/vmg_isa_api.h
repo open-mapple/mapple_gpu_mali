@@ -1,4 +1,4 @@
-// Viva Metal - direct AIR -> Valhall ISA compiler: interface for vmg_screen.c (programs, shells, cache, hooks).
+// Mapple Metal - direct AIR -> Valhall ISA compiler: interface for vmg_screen.c (programs, shells, cache, hooks).
 #pragma once
 #include <stddef.h>
 #include <stdint.h>

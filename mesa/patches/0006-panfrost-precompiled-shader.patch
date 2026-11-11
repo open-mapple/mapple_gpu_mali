@@ -1,4 +1,4 @@
-Viva: precompiled shaders (AIR -> Valhall ISA compiler in the driver): hooks that own shell NIR shaders and supply binary + pan_shader_info + varying layout.
+Mapple: precompiled shaders (AIR -> Valhall ISA compiler in the driver): hooks that own shell NIR shaders and supply binary + pan_shader_info + varying layout.
 diff --git a/src/gallium/drivers/panfrost/pan_shader.c b/src/gallium/drivers/panfrost/pan_shader.c
 index 920be21..7e51ba5 100644
 --- a/src/gallium/drivers/panfrost/pan_shader.c
@@ -11,7 +11,7 @@ index 920be21..7e51ba5 100644
  #include "compiler/bifrost/bifrost_compile.h"
  #include "shader_enums.h"
  
-+/* Viva: precompiled shaders (pan_isa_hooks.h) */
++/* Mapple: precompiled shaders (pan_isa_hooks.h) */
 +const struct pan_isa_hooks *pan_isa_hooks;
 +
  static struct panfrost_uncompiled_shader *
@@ -24,7 +24,7 @@ index 920be21..7e51ba5 100644
 -   nir_shader *s = nir_shader_clone(NULL, ir);
 +   nir_shader *s = NULL;
 +   if (pan_isa_owns(ir)) {
-+      /* Viva: compiled to Valhall machine code by the embedding driver; a NIR
++      /* Mapple: compiled to Valhall machine code by the embedding driver; a NIR
 +       * shader comes back when the precompiled path cannot do this variant. */
 +      struct pan_isa_key ikey = {
 +         .stage = ir->info.stage,
@@ -86,7 +86,7 @@ index 920be21..7e51ba5 100644
     so->nir = nir;
  
 +   if (pan_isa_owns(nir)) {
-+      /* Viva: precompiled shader, the NIR is a shell without code */
++      /* Mapple: precompiled shader, the NIR is a shell without code */
 +      struct panfrost_device *idev = pan_device(pctx->screen);
 +      pan_isa_hooks->create_layout(nir, panfrost_device_gpu_id(idev),
 +                                   &so->vs_varying_layout,
@@ -109,8 +109,8 @@ index 0000000..6430511
 +++ b/src/panfrost/compiler/pan_isa_hooks.h
 @@ -0,0 +1,56 @@
 +/*
-+ * Viva: precompiled shaders. An embedding driver that compiles its shaders to
-+ * Valhall machine code itself (Viva's AIR -> ISA compiler) hands Gallium a
++ * Mapple: precompiled shaders. An embedding driver that compiles its shaders to
++ * Valhall machine code itself (Mapple's AIR -> ISA compiler) hands Gallium a
 + * "shell" nir_shader (stage and I/O info, no code) and these hooks supply the
 + * binary, the shader info and the vertex varying layout instead of the NIR
 + * compiler. A shader the hooks do not own is compiled by Mesa as usual.

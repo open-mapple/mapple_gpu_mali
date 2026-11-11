@@ -1,4 +1,4 @@
-// Viva Metal - command queue, command buffer, blit and compute encoders.
+// Mapple Metal - command queue, command buffer, blit and compute encoders.
 // Encoders record closures; at commit the queue replays them on the device's serial GPU queue (vmg_cmd_* calls),
 // flushes to the driver, reports "scheduled", and reports completion when the driver's fence signals (handlers,
 // status, waitUntilCompleted through the _MTLCommandBuffer machinery, as in metal-shim).

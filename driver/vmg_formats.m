@@ -1,4 +1,4 @@
-// Viva Metal - Metal pixel/vertex formats -> Gallium formats. Objective-C only for the Metal enums; no Gallium
+// Mapple Metal - Metal pixel/vertex formats -> Gallium formats. Objective-C only for the Metal enums; no Gallium
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"   // Depth24Unorm_Stencil8 / X24_Stencil8 still exist on iOS 16
 // structures here (just the u_formats.h enum).
 #import <Metal/Metal.h>

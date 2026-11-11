@@ -113,7 +113,7 @@ diff --git a/src/gallium/drivers/panfrost/pan_device.h b/src/gallium/drivers/pan
     pthread_mutex_t submit_lock;
  
 +#ifdef __APPLE__
-+   /* XNU: every submit lists sample_positions, and the Viva kernel makes each
++   /* XNU: every submit lists sample_positions, and the Mapple kernel makes each
 +    * job wait for the last job on each of its BOs, so jobs complete in submit
 +    * order. Submits are numbered; once a submit is known complete (a fence or
 +    * WAIT_BO said so), every BO last used by an earlier submit is idle and

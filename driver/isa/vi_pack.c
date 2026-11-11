@@ -1,4 +1,4 @@
-// Viva ISA compiler: constant lowering, blend-shader prologs, layout and encoding.
+// Mapple ISA compiler: constant lowering, blend-shader prologs, layout and encoding.
 #include "vi.h"
 #include <stdlib.h>
 #include <string.h>

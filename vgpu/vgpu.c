@@ -1,4 +1,4 @@
-// Viva GPU userspace client: fd table and dispatch to the back-end (see vgpu.h).
+// Mapple GPU userspace client: fd table and dispatch to the back-end (see vgpu.h).
 #include "vgpu.h"
 #include <errno.h>
 #include <fcntl.h>

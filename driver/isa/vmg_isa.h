@@ -1,4 +1,4 @@
-// Viva Metal - direct AIR -> Valhall ISA compiler (Mali-G57 MC2, arch v9). Opt-in (VMG_ISA=1).
+// Mapple Metal - direct AIR -> Valhall ISA compiler (Mali-G57 MC2, arch v9). Opt-in (VMG_ISA=1).
 //
 // Every feature of docs/ANALISI-ISA-DIRETTA-2026-11-04.md §4 has an ID (A1..G4) and a toggle VMG_ISA_NO_<ID>; a
 // function that needs a disabled (or unsupported) feature is compiled on the AIR -> NIR -> Panfrost path instead.

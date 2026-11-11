@@ -1,4 +1,4 @@
-// Viva Metal - render command encoder. Each call is recorded in order and replayed on the GPU queue as vmg_cmd_*
+// Mapple Metal - render command encoder. Each call is recorded in order and replayed on the GPU queue as vmg_cmd_*
 // (Metal state applies to the draws that follow it).
 #import "VMPrivate.h"
 #import <TargetConditionals.h>

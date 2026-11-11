@@ -1,4 +1,4 @@
-// Viva Metal - direct AIR -> Valhall ISA compiler: driver glue.
+// Mapple Metal - direct AIR -> Valhall ISA compiler: driver glue.
 //
 // vmg_isa_compile: AIR (vmg_air_module_load, A1) -> Valhall IR (vi_sel*.c) -> optimization, constants, register
 // allocation, flow control, encoding (vi_*.c) -> a program: binary + pan_shader_info + sysvals + varying layout.

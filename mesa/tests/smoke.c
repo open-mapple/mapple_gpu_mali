@@ -1,5 +1,5 @@
 /*
- * Smoke test for libmesa_viva.a
+ * Smoke test for libmesa_mapple.a
  *  (a) llvmpipe + null sw winsys: clear a 64x64 RGBA8 render target, read back
  *  (b) nir_builder fragment shader -> panfrost Valhall compiler (Mali-G57, v9)
  */

@@ -1,4 +1,4 @@
-// Viva Metal - private Metal.framework declarations and the driver's classes.
+// Mapple Metal - private Metal.framework declarations and the driver's classes.
 // The _MTL* base classes are exported by Metal.framework; only the selectors we call or override are declared.
 // Base layer (catch-all, inert objects, log, statistics, pixel format info) comes from metal-shim unchanged; the
 // GPU work goes through vmg (../vmg.h): Gallium + NIR, llvmpipe on the Mac, Panfrost on the phone.
@@ -55,7 +55,7 @@ enum { VM_PF_D24S8 = 255, VM_PF_X24S8 = 262 };
 - (instancetype)initWithDevice:(id)device depthStencilDescriptor:(MTLDepthStencilDescriptor *)desc;
 @end
 
-// (Viva: VMDevice.m sets _limits by field name from the ivar's type encoding; this struct is metal-shim's macOS view.)
+// (Mapple: VMDevice.m sets _limits by field name from the ivar's type encoding; this struct is metal-shim's macOS view.)
 // Layout of -[_MTLDevice _limits] (ivar at offset 8, 264 bytes), generated from the
 // runtime type encoding. Checked against the live ivar offsets in TSMtlDevice.
 typedef struct {

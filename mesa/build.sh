@@ -116,7 +116,7 @@ configure_macos() {
   fi
 }
 
-# Static libraries that make up libmesa_viva.a (paths relative to build dir).
+# Static libraries that make up libmesa_mapple.a (paths relative to build dir).
 # Frontends are disabled, so these are built as explicit ninja targets.
 mesa_libs() {
   cat <<'EOF'
@@ -173,7 +173,7 @@ package_macos() {
   local libs=() l
   while read -r l; do libs+=("$B/$l"); done < <(mesa_libs)
   # libtool warns about duplicate member names across archives; harmless.
-  libtool -static -no_warning_for_no_symbols -o "$O/lib/libmesa_viva.a" "${libs[@]}" 2>/dev/null
+  libtool -static -no_warning_for_no_symbols -o "$O/lib/libmesa_mapple.a" "${libs[@]}" 2>/dev/null
 
   # Headers: copy whole trees, preserving paths relative to src/ and build/.
   ( cd "$SRC" && find include src/util src/c11 src/compiler src/gallium/include \
@@ -226,7 +226,7 @@ EOF
   local llvm_libs
   llvm_libs="$("$LLVM_PREFIX/bin/llvm-config" --link-shared --ldflags --libs core 2>/dev/null | tr '\n' ' ')"
   cat > "$O/ldflags.txt" <<EOF
-$O/lib/libmesa_viva.a
+$O/lib/libmesa_mapple.a
 $LIBDRM/out/libdrm-xnu.a
 $llvm_libs -Wl,-rpath,$LLVM_PREFIX/lib
 -L$BREW/opt/zstd/lib -lzstd -lz -lc++ -lpthread -lm -framework IOKit -framework IOSurface -framework CoreFoundation

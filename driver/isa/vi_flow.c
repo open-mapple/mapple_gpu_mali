@@ -1,4 +1,4 @@
-// Viva ISA compiler: flow control for a register-allocated shader.
+// Mapple ISA compiler: flow control for a register-allocated shader.
 //
 // Hardware rules (Valhall v9; Arm's ISA description and the behaviour Mesa relies on):
 //  - Message (asynchronous) instructions signal one of the slots 0-2; a later instruction reading or writing a

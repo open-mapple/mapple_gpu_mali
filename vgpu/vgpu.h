@@ -1,4 +1,4 @@
-// Viva GPU userspace client: the only code that talks to the kernel driver (uapi/viva_gpu_uapi.h).
+// Mapple GPU userspace client: the only code that talks to the kernel driver (uapi/mapple_gpu_uapi.h).
 // Used by libdrm-xnu (Mesa's Panfrost) and directly by tests.
 //
 // A connection is addressed by a file descriptor so that Mesa, which passes a DRM fd around, needs no changes:
@@ -6,7 +6,7 @@
 // table; vgpu_ioctl()/vgpu_mmap() on it go to the connection.
 //
 // Back-ends (VGPU_BACKEND, read once):
-//   iokit  - VivaGPUAccelerator through IOKit (default on iOS)
+//   iokit  - MappleGPUAccelerator through IOKit (default on iOS)
 //   mock   - kernel simulated in-process (default on macOS): BOs are anonymous memory with GPU VA = CPU address,
 //            submits complete at once without running anything (VGPU_MOCK_TRACE=1 logs them). It exercises
 //            all of Mesa's Panfrost up to the job chains, for tests on the Mac.
@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "../uapi/viva_gpu_uapi.h"
+#include "../uapi/mapple_gpu_uapi.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +26,7 @@ int vgpu_open(void);
 int vgpu_close(int fd);
 // Whether fd was returned by vgpu_open and is still open.
 bool vgpu_is_fd(int fd);
-// One selector of viva_gpu_uapi.h; arg points to its structure (sizeof checked). Returns 0 or -errno.
+// One selector of mapple_gpu_uapi.h; arg points to its structure (sizeof checked). Returns 0 or -errno.
 int vgpu_ioctl(int fd, enum vgpu_selector sel, void *arg);
 // Running totals (any thread; relaxed): kernel calls per selector, and job chains submitted (SUBMIT + batched ones).
 void vgpu_counters(uint64_t calls[VGPU_SEL_COUNT], uint64_t *jobs);

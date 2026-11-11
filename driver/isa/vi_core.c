@@ -1,4 +1,4 @@
-// Viva ISA compiler: IR construction and printing.
+// Mapple ISA compiler: IR construction and printing.
 #include "vi.h"
 #include <stdlib.h>
 #include <string.h>

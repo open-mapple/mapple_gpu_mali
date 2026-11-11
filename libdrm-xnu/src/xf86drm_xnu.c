@@ -1,5 +1,5 @@
-// libdrm for XNU: the libdrm entry points Mesa's Panfrost uses (SYMBOLS.txt), implemented on the Viva GPU client
-// (vgpu/, uapi/viva_gpu_uapi.h). The DRM fd is a vgpu fd; DRM_IOCTL_PANFROST_* and the syncobj ioctls become vgpu
+// libdrm for XNU: the libdrm entry points Mesa's Panfrost uses (SYMBOLS.txt), implemented on the Mapple GPU client
+// (vgpu/, uapi/mapple_gpu_uapi.h). The DRM fd is a vgpu fd; DRM_IOCTL_PANFROST_* and the syncobj ioctls become vgpu
 // selectors with the same structures. A "dma-buf fd" is an IOSurface plane (vmg_drm_surface_fd): importing it maps
 // the surface's pages into the GPU (VGPU_SEL_IMPORT_IOSURFACE). Anything else returns -ENOSYS.
 #include <errno.h>
@@ -276,7 +276,7 @@ int drmIoctl(int fd, unsigned long request, void *arg)
     if (trace_bo && sel == VGPU_SEL_GEM_CLOSE) fprintf(stderr, "vgpu: close %u\n", ((struct vgpu_gem_close *)arg)->handle);
     // MMAP_BO: the uapi's mmap token is the BO handle (VGPU_SEL_MMAP_BO), so no kernel call is needed; Panfrost asks
     // for it at every mapping of a BO taken from its cache.
-    // MADVISE: the kernel stores the flag and never purges (retained = 1, VivaGPUUserClient), so it is answered here:
+    // MADVISE: the kernel stores the flag and never purges (retained = 1, MappleGPUUserClient), so it is answered here:
     // Panfrost calls it twice per BO it recycles through its cache. VGPU_MADVISE_KERNEL=1 sends it to the kernel.
     static int madv_kernel = -1;
     if (madv_kernel < 0) madv_kernel = getenv("VGPU_MADVISE_KERNEL") != NULL;

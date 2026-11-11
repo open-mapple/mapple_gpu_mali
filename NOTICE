@@ -1,0 +1,5 @@
+Open Mapple: the Metal driver for Mali (Valhall) GPUs.
+
+- viva-gpu (github.com/Nik300/viva-gpu), by Nicola Leone Ciardi.
+- Mesa (mesa3d.org), MIT: fetched when building; mesa/patches/ changes it, and Mesa-derived files keep their
+  own notices.

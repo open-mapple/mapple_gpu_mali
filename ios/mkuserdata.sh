@@ -1,7 +1,7 @@
 #!/bin/bash
-# Builds a userdata image for viva with the Viva Metal driver installed:
-#   /System/Library/Extensions/VivaMTLDriver.bundle   (Metal loads it once the kernel publishes VivaGPUAccelerator)
-#   /private/var/root/viva-tests/                     (vmprobe, test_vgpu, compute, ... from ios/build.sh)
+# Builds a userdata image for viva with the Mapple Metal driver installed:
+#   /System/Library/Extensions/MappleMTLDriver.bundle   (Metal loads it once the kernel publishes MappleGPUAccelerator)
+#   /private/var/root/mapple-dev/                     (vmprobe, test_vgpu, compute, ... from ios/build.sh)
 #
 #   sudo ios/mkuserdata.sh BASE.img DIST OUT          (DIST = the CI artifact "viva-gpu-ios", unpacked)
 #
@@ -14,24 +14,24 @@ set -euo pipefail
 [[ $EUID == 0 ]] || { echo "run with sudo (files must be owned by root)" >&2; exit 1; }
 base=$1 dist=$2 out=$3
 here=$(cd "$(dirname "$0")" && pwd)
-img2simg="$here/../../fork/tools/viva-img2simg.py"
+img2simg="$here/../../fork/tools/img2simg.py"
 [[ -f $base ]] || { echo "no base image $base" >&2; exit 1; }
-[[ -d $dist/VivaMTLDriver.bundle ]] || { echo "$dist has no VivaMTLDriver.bundle" >&2; exit 1; }
+[[ -d $dist/MappleMTLDriver.bundle ]] || { echo "$dist has no MappleMTLDriver.bundle" >&2; exit 1; }
 [[ -f $img2simg ]] || { echo "missing $img2simg" >&2; exit 1; }
 [[ ! -e $out.img && ! -e $out.simg ]] || { echo "refusing to overwrite $out.img / $out.simg" >&2; exit 1; }
 
 cp -c "$base" "$out.img"            # APFS clone: instant, shares blocks with the base
-mnt=$(mktemp -d /tmp/viva-userdata.XXXXXX)
+mnt=$(mktemp -d /tmp/mapple-userdata.XXXXXX)
 dev=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nobrowse -owners on -mountpoint "$mnt" "$out.img" | awk 'NR==1{print $1}')
 trap 'hdiutil detach "$dev" >/dev/null 2>&1 || true; rmdir "$mnt" 2>/dev/null || true' EXIT
 [[ -d $mnt/System/Library/Extensions ]] || { echo "$out.img does not look like the iOS root" >&2; exit 1; }
 
-ext="$mnt/System/Library/Extensions/VivaMTLDriver.bundle"
+ext="$mnt/System/Library/Extensions/MappleMTLDriver.bundle"
 rm -rf "$ext"
-cp -R "$dist/VivaMTLDriver.bundle" "$ext"
+cp -R "$dist/MappleMTLDriver.bundle" "$ext"
 chown -R root:wheel "$ext"
 chmod -R u=rwX,go=rX "$ext"
-tests="$mnt/private/var/root/viva-tests"
+tests="$mnt/private/var/root/mapple-dev"
 mkdir -p "$tests"
 [[ -d $dist/tests ]] && cp -R "$dist/tests/." "$tests/"
 chown -R root:wheel "$tests"

@@ -1,4 +1,4 @@
-// Viva ISA compiler: copy propagation and dead code elimination on the Valhall IR (before register allocation).
+// Mapple ISA compiler: copy propagation and dead code elimination on the Valhall IR (before register allocation).
 //
 // Copy propagation replaces the uses of `MOV.i32 v = x` (v a single-definition one-word register) by x when x is a
 // single-definition register word, or (in ALU instructions only) a uniform / constant. Staging operands and

@@ -7,7 +7,7 @@ LDFLAGS := $(shell cat $(OUT)/ldflags.txt)
 
 all: smoke
 
-smoke: smoke.c $(OUT)/lib/libmesa_viva.a
+smoke: smoke.c $(OUT)/lib/libmesa_mapple.a
 	$(CC) $(CFLAGS) -o $@ smoke.c $(LDFLAGS)
 
 clean:

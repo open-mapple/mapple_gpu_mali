@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Builds app/Resources/isa-verified.json (Viva Manager: automatic selection of the ISA features) from isatest runs on
+# Builds app/Resources/isa-verified.json (Mapple Manager: automatic selection of the ISA features) from isatest runs on
 # the reference phone, one case per process: DIR/final_isa.txt (isatest ID -mode isa) and DIR/final_nir.txt (-mode nir).
 #   gen_isa_verified.py DIR DRIVER_COMMIT app/Resources/malimetal-flags.json app/Resources/isa-verified.json
 import json, re, sys

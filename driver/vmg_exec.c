@@ -1,4 +1,4 @@
-// Viva Metal - Gallium back-end: command execution on the GPU queue (render passes, draws, dispatches, blits,
+// Mapple Metal - Gallium back-end: command execution on the GPU queue (render passes, draws, dispatches, blits,
 // fences). See vmg.h.
 #include <time.h>
 #include "vmg_internal.h"

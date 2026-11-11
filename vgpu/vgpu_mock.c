@@ -1,4 +1,4 @@
-// Viva GPU: kernel simulated in-process (VGPU_BACKEND=mock), for tests on the Mac without the phone.
+// Mapple GPU: kernel simulated in-process (VGPU_BACKEND=mock), for tests on the Mac without the phone.
 // BOs are anonymous memory with a GPU VA from the Panfrost range [32 MiB, 4 GiB) (first fit, like the kernel); each
 // vgpu_mmap returns a new shared alias of the memory (mach_vm_remap), so munmap of a CPU mapping never frees the BO. Submits complete
 // immediately: out_sync is signalled, nothing runs. GET_PARAM answers as a Mali-G57 MC2 (VGPU_MOCK_GPU_ID overrides
