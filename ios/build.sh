@@ -133,6 +133,8 @@ void TSMtlRegisterGLSL(id a, id b) {}' > "$OUT/obj/tsdevice.m"
       -framework IOSurface -o "$T/ca"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/astctest.m" -framework Foundation -framework Metal -o "$T/astctest"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/fbfetch.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal -o "$T/fbfetch"
+  $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/phototest.m" -framework Foundation -framework CoreImage -framework CoreVideo \
+      -framework ImageIO -framework IOSurface -framework Metal -framework VideoToolbox -framework CoreGraphics -o "$T/phototest"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/cafetch-replay.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal \
       -o "$T/cafetch-replay"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/passbench.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal \
