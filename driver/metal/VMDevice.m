@@ -343,9 +343,12 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
     }
     static _Atomic int logged;
     if (atomic_fetch_add(&logged, 1) < 64) {
-        fprintf(stderr, "vmg: compressed image %lux%lu format %lu, %lu levels, %lu bytes\n", (unsigned long)desc.width,
+        const uint8_t *b = bytes;
+        fprintf(stderr, "vmg: compressed image %lux%lu format %lu, %lu levels, storage %lu, %lu bytes at +0x%lx: "
+                "%02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x\n", (unsigned long)desc.width,
                 (unsigned long)desc.height, (unsigned long)desc.pixelFormat, (unsigned long)desc.mipmapLevelCount,
-                (unsigned long)length);
+                (unsigned long)desc.storageMode, (unsigned long)length, (unsigned long)((uintptr_t)bytes & 0x3fff),
+                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
     }
     VMTexture *t = [[VMTexture alloc] initWithDevice:self descriptor:desc iosurface:NULL plane:0];
     TSPixelFormatInfo pf = TSPixelFormatGetInfo(desc.pixelFormat);

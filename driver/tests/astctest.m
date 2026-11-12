@@ -3,7 +3,8 @@
 // by replaceRegion, by a blit from a buffer and by newTextureWithBytesNoCopy (CoreAnimation's way for these images);
 // each texture is drawn (sampled) into a BGRA target the same size and read back.
 // The no-copy texture must hand its memory to the deallocator when it is released, not before.
-// Usage: astctest FILE.atx [OUT.ppm]   (the first drawing is written as a PPM, for a look on the Mac)
+// Usage: astctest FILE.atx [OUT.ppm [usage=N | view]]   (the first drawing as a PPM; the no-copy texture with another
+// usage, or sampled through a view, as CoreAnimation may)
 // On the Mac against this driver (llvmpipe): built with -DVMG_TEST_DYLIB and linked to libMappleMetal.dylib.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -100,6 +101,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         ad.usage = MTLTextureUsageShaderRead;
         ad.storageMode = way == 0 ? MTLStorageModeShared : MTLStorageModePrivate;
         if (way == 2) ad.storageMode = MTLStorageModeShared;
+        if (way == 2 && argc > 3 && strncmp(argv[3], "usage=", 6) == 0) ad.usage = (MTLTextureUsage)strtoul(argv[3] + 6, NULL, 0);
         void *nocopy = NULL;
         if (way == 2) {
             size_t page = (size_t)getpagesize(), len = (need + page - 1) / page * page;
@@ -136,7 +138,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
         id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
         [e setRenderPipelineState:pipe];
-        [e setFragmentTexture:astc atIndex:0];
+        [e setFragmentTexture:(way == 2 && argc > 3 && strcmp(argv[3], "view") == 0 ? [astc newTextureViewWithPixelFormat:astc.pixelFormat] : astc) atIndex:0];
         [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
         [e endEncoding];
         [cb commit];
@@ -144,7 +146,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         if (cb.error) { printf("%s: command buffer: %s\n", what, cb.error.description.UTF8String); fails++; continue; }
         [target getBytes:px bytesPerRow:(size_t)w * 4 fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
         summary(what, px, w, h);
-        if (way == 0 && argc > 2) {
+        if (way == 0 && argc > 2 && strcmp(argv[2], "-") != 0) {
             FILE *o = fopen(argv[2], "wb");
             fprintf(o, "P6 %u %u 255\n", w, h);
             for (size_t i = 0; i < (size_t)w * h; i++) fputc(px[4 * i + 2], o), fputc(px[4 * i + 1], o), fputc(px[4 * i], o);
