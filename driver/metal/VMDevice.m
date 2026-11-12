@@ -330,6 +330,32 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)desc iosurface:(IOSurfaceRef)surface plane:(NSUInteger)plane {
     return [[VMTexture alloc] initWithDevice:self descriptor:desc iosurface:surface plane:plane];
 }
+// SPI: CoreAnimation's compressed images (CA::OGL::MetalContext::update_texture, the ASTC .atx snapshots of the lock
+// screen posters). On Apple GPUs the bytes are in the GPU's own tiled layout; this device makes no texture layouts
+// (newTextureLayoutWithDescriptor: answers nil), so ImageIO hands them over linear: rows of blocks, mip levels one after
+// another. They are copied into an ordinary texture.
+- (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes length:(NSUInteger)length descriptor:(MTLTextureDescriptor *)desc
+                                deallocator:(void (^)(void *, NSUInteger))deallocator {
+    if (desc.textureType != MTLTextureType2D || desc.arrayLength != 1) {
+        TSMtlError(@"newTextureWithBytesNoCopy: texture type %lu x %lu not handled", (unsigned long)desc.textureType,
+                   (unsigned long)desc.arrayLength);
+        return nil;
+    }
+    VMTexture *t = [[VMTexture alloc] initWithDevice:self descriptor:desc iosurface:NULL plane:0];
+    TSPixelFormatInfo pf = TSPixelFormatGetInfo(desc.pixelFormat);
+    NSUInteger w = desc.width, h = desc.height, off = 0;
+    for (NSUInteger lvl = 0; t && lvl < desc.mipmapLevelCount; lvl++) {
+        NSUInteger bpr = (w + pf.blockWidth - 1) / pf.blockWidth * pf.bytesPerBlock;
+        NSUInteger size = bpr * ((h + pf.blockHeight - 1) / pf.blockHeight);
+        if (off + size > length) break;
+        [t replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:lvl withBytes:(const uint8_t *)bytes + off bytesPerRow:bpr];
+        off += size;
+        w = MAX(w / 2, 1);
+        h = MAX(h / 2, 1);
+    }
+    if (deallocator) deallocator(bytes, length);
+    return t;
+}
 - (MTLSizeAndAlign)heapBufferSizeAndAlignWithLength:(NSUInteger)length options:(MTLResourceOptions)options {
     return (MTLSizeAndAlign){ (length + 255) & ~(NSUInteger)255, 256 };
 }
