@@ -45,6 +45,12 @@ int main(int argc, char **argv)
     if (fd < 0) { printf("vgpu_open: %d\n", fd); return 1; }
     printf("backend %s, %d BOs per loop\n", vgpu_backend_name(), n);
     long m0, d0, m1, d1;
+    // one BO first: the connection's own mappings (its completion page) are not the loop's
+    uint32_t h0 = new_bo(fd, 256 << 10);
+    struct drm_panfrost_mmap_bo mb0 = { .handle = h0 };
+    void *p0 = NULL;
+    if (h0 && !drmIoctl(fd, DRM_IOCTL_PANFROST_MMAP_BO, &mb0) && !drmMap(fd, mb0.offset, 256 << 10, &p0)) drmUnmap(p0, 256 << 10);
+    if (h0) drmCloseBufferHandle(fd, h0);
     counts(&m0, &d0);
     for (int i = 0; i < n; i++) {
         uint32_t h = new_bo(fd, 256 << 10);
