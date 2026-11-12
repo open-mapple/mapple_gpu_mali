@@ -140,7 +140,8 @@ VM_CATCH_ALL(VMRenderPipelineState)
         if (!rp) failure = [NSString stringWithFormat:@"pipeline state: %s", err ? err : "?"];
         free(err);
     }
-    _functionNames = [NSString stringWithFormat:@"%@/%@", desc.vertexFunction.name, desc.fragmentFunction.name];
+    _functionNames = [NSString stringWithFormat:@"%@/%@ %p", desc.vertexFunction.name, desc.fragmentFunction.name,
+                      (__bridge void *)desc.fragmentFunction];
     if (failure) {
         _failure = failure;
         TSMtlError(@"render pipeline %@ (%@/%@) not drawable: %@", desc.label, desc.vertexFunction.name, desc.fragmentFunction.name, failure);

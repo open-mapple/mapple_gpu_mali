@@ -178,7 +178,7 @@ static void TSCatchAllForward(id self, SEL _cmd, NSInvocation *inv) {
     }
 }
 
-static BOOL TSCatchAllResponds(id self, SEL _cmd, SEL sel) {
+static BOOL TSCatchAllRespondsTo(id self, SEL sel) {
     if (class_respondsToSelector(object_getClass(self), sel)) return YES;
     // Required methods of public protocols are always "implemented" (by the catch-all); optional ones are reported
     // missing so apps take their fallback paths. Mapple: so are the methods of private protocols (MTLDeviceSPI, ...)
@@ -191,6 +191,13 @@ static BOOL TSCatchAllResponds(id self, SEL _cmd, SEL sel) {
         if (TSFindInProtocol(p, sel, YES, &d)) return YES;
     }
     return NO;
+}
+
+static BOOL TSCatchAllResponds(id self, SEL _cmd, SEL sel) {
+    BOOL yes = TSCatchAllRespondsTo(self, sel);
+    if (VMCapTraceOn() && [self isKindOfClass:[VMDevice class]])
+        VMCapNote([NSString stringWithFormat:@"respondsToSelector:%s", sel_getName(sel)], yes);
+    return yes;
 }
 
 void TSMtlInstallCatchAll(Class cls) {

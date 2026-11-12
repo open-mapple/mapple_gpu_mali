@@ -227,6 +227,8 @@ void TSMtlInstallLayerTuning(void);
 
 // One line on stderr (backboardd's goes to the console) about a compressed texture's use; at most 256 per process.
 void VMTraceCompressed(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
+BOOL VMCapTraceOn(void);
+void VMCapNote(NSString *question, uint64_t answer);
 
 // AIR bitcode of a function (specialized, as Metal hands it to drivers) and of its linked visible functions.
 NSData *VMBitcodeOfFunction(id<MTLFunction> function);

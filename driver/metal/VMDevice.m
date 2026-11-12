@@ -5,6 +5,7 @@
 // MetalPluginClassName (docs/PIANO-GPU.md, G0). Tests create it with VMCreateDevice() / TSMtlCreateDevice().
 #import "VMPrivate.h"
 #import <objc/runtime.h>
+#import <os/lock.h>
 #import <stdatomic.h>
 #import <TargetConditionals.h>
 #import <sys/sysctl.h>
@@ -53,6 +54,87 @@ static unsigned long long VMFeatureProfileValue(void) {
     return profile;
 }
 
+// Capability trace (VMG_CAPTRACE=1 or /private/var/tmp/vmg-captrace present at the process's start): each distinct
+// question a framework asks the device, with the answer, once, on stderr ("vmg: cap"); the selectors are the device
+// queries in QuartzCore's selector references. Also every specialised function's constant values ("vmg: fn"), so the
+// draw trace (pipeline names with the fragment function's address) shows what CoreAnimation asked each shader to do.
+BOOL VMCapTraceOn(void) {
+    static int on = -1;
+    if (on < 0) on = getenv("VMG_CAPTRACE") != NULL || access("/private/var/tmp/vmg-captrace", F_OK) == 0;
+    return on;
+}
+
+void VMCapNote(NSString *question, uint64_t answer) {
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSMutableSet *seen;
+    os_unfair_lock_lock(&lock);
+    if (!seen) seen = [NSMutableSet set];
+    BOOL first = seen.count < 300 && ![seen containsObject:question];
+    if (first) [seen addObject:question];
+    os_unfair_lock_unlock(&lock);
+    if (first) fprintf(stderr, "vmg: cap %s = %llu\n", question.UTF8String, (unsigned long long)answer);
+}
+
+// Integer or BOOL answers with at most one integer argument.
+static void VMCapWrap(Class cls, SEL sel) {
+    Method m = class_getInstanceMethod(cls, sel);
+    const char *types = m ? method_getTypeEncoding(m) : NULL;
+    unsigned args = m ? method_getNumberOfArguments(m) - 2 : 0;
+    if (!types || args > 1 || !strchr("BcCiIqQ", types[0])) return;
+    IMP orig = method_getImplementation(m);
+    char ret = types[0];
+    IMP imp = imp_implementationWithBlock(^uint64_t(id self, uint64_t a) {
+        uint64_t v = ((uint64_t (*)(id, SEL, uint64_t))orig)(self, sel, a);
+        v &= strchr("BcC", ret) ? 0xff : strchr("iI", ret) ? 0xffffffffull : ~0ull;
+        VMCapNote(args ? [NSString stringWithFormat:@"%s%llu", sel_getName(sel), (unsigned long long)a] : @(sel_getName(sel)), v);
+        return v;
+    });
+    if (!class_addMethod(cls, sel, imp, types)) method_setImplementation(m, imp);
+}
+
+static NSString *VMConstantsLine(MTLFunctionConstantValues *values) {
+    NSString *d = values.description;
+    NSRange brace = [d rangeOfString:@"{"];
+    if (brace.location != NSNotFound) d = [d substringFromIndex:brace.location];
+    NSArray *words = [d componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return [[words filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]] componentsJoinedByString:@" "];
+}
+
+static void VMFunctionNote(id<MTLFunction> f, NSString *name, MTLFunctionConstantValues *values) {
+    static _Atomic int lines;
+    if (f && values && atomic_fetch_add(&lines, 1) < 160)
+        fprintf(stderr, "vmg: fn %p %s: %s\n", (__bridge void *)f, name.UTF8String, VMConstantsLine(values).UTF8String);
+}
+
+static void VMCapTraceInstall(Class device) {
+    for (NSString *name in @[ @"supportsFamily:", @"supportsFeatureSet:", @"supportsExtendedXR10Formats",
+                              @"supportsMemorylessRenderTargets", @"supportsNativeHardwareFP16", @"supportsRasterOrderGroups",
+                              @"supportsSIMDGroup", @"supportsTileShaders", @"supportsYCBCRFormats12",
+                              @"supportsYCBCRPackedFormats12", @"minimumLinearTextureAlignmentForPixelFormat:",
+                              @"maxTextureWidth2D", @"maxTextureHeight2D", @"maxFragmentSamplers", @"maxFragmentTextures",
+                              @"maxColorAttachments", @"minConstantBufferAlignmentBytes" ])
+        VMCapWrap(device, NSSelectorFromString(name));
+    Class lib = NSClassFromString(@"_MTLLibrary");
+    SEL byDesc = @selector(newFunctionWithDescriptor:error:), byName = @selector(newFunctionWithName:constantValues:error:);
+    Method md = lib ? class_getInstanceMethod(lib, byDesc) : NULL, mn = lib ? class_getInstanceMethod(lib, byName) : NULL;
+    if (md) {
+        IMP orig = method_getImplementation(md);
+        method_setImplementation(md, imp_implementationWithBlock(^id(id self, MTLFunctionDescriptor *d, NSError **e) {
+            id f = ((id (*)(id, SEL, id, NSError **))orig)(self, byDesc, d, e);
+            VMFunctionNote(f, d.name, d.constantValues);
+            return f;
+        }));
+    }
+    if (mn) {
+        IMP orig = method_getImplementation(mn);
+        method_setImplementation(mn, imp_implementationWithBlock(^id(id self, NSString *n, MTLFunctionConstantValues *v, NSError **e) {
+            id f = ((id (*)(id, SEL, id, id, NSError **))orig)(self, byName, n, v, e);
+            VMFunctionNote(f, n, v);
+            return f;
+        }));
+    }
+}
+
 @interface VMHeap : TSMtlInert <MTLHeap>
 - (instancetype)initWithDevice:(VMDevice *)device descriptor:(MTLHeapDescriptor *)desc;
 @end
@@ -71,6 +153,7 @@ static const void *const VMGPUQueueKey = &VMGPUQueueKey;
     TSMtlInstallCatchAll(self);
     Protocol *spi = objc_getProtocol("MTLDeviceSPI");
     if (spi) class_addProtocol(self, spi);
+    if (VMCapTraceOn()) VMCapTraceInstall(self);
 }
 
 - (instancetype)initWithDriver:(const char *)driver {

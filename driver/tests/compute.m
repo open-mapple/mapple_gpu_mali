@@ -1,10 +1,15 @@
 // Compute on the Mapple Metal driver: buffers, threadgroup memory + barriers, atomics, texture writes, dispatchThreads
 // (non-uniform grid), threadgroup arguments, setBytes. Runs on llvmpipe on the Mac.
+// "compute jobs N": N command buffers of one small dispatch each, waited one by one, with the GPU driver's object
+// counts and wired memory (kern.mapple_gpu_memory) before and after: the whole submit path for a leak check.
+// "compute caps [apple4]": the device's answers to CoreAnimation's capability queries (QuartzCore's selector
+// references), as an A10 (our profile) or with the A11's Apple4 profile.
 #import <Metal/Metal.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/sysctl.h>
 
 id<MTLDevice> TSMtlCreateDevice(void);
 
@@ -61,12 +66,74 @@ static void run(void (^body)(id<MTLComputeCommandEncoder>)) {
     [cb waitUntilCompleted];
 }
 
-int main(void) { @autoreleasepool {
+static void objects(const char *when) {
+    size_t len = 0;
+    char *buf = NULL, *line;
+    if (sysctlbyname("kern.mapple_gpu_memory", NULL, &len, NULL, 0) == 0 && (buf = malloc(len + 1)) != NULL &&
+        sysctlbyname("kern.mapple_gpu_memory", buf, &len, NULL, 0) == 0 && (buf[len] = 0, line = strstr(buf, "objects: "))) {
+        printf("%s: %.*s\n", when, (int)strcspn(line, "\n"), line);
+    } else {
+        printf("%s: no kern.mapple_gpu_memory\n", when);
+    }
+    free(buf);
+}
+
+static void caps(void) {
+    for (int f = 1001; f <= 1009; f++) printf("supportsFamily:%d = %d\n", f, [dev supportsFamily:(MTLGPUFamily)f]);
+    for (int f = 2001; f <= 2002; f++) printf("supportsFamily:%d = %d\n", f, [dev supportsFamily:(MTLGPUFamily)f]);
+    for (int f = 3001; f <= 3003; f++) printf("supportsFamily:%d = %d\n", f, [dev supportsFamily:(MTLGPUFamily)f]);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    for (int s = 0; s <= 16; s++) printf("supportsFeatureSet:%d = %d\n", s, [dev supportsFeatureSet:(MTLFeatureSet)s]);
+#pragma clang diagnostic pop
+    for (NSString *n in @[ @"supportsExtendedXR10Formats", @"supportsMemorylessRenderTargets", @"supportsNativeHardwareFP16",
+                           @"supportsRasterOrderGroups", @"supportsSIMDGroup", @"supportsTileShaders", @"supportsYCBCRFormats12",
+                           @"supportsYCBCRPackedFormats12", @"supportsBCTextureCompression", @"maxTextureWidth2D",
+                           @"maxTextureHeight2D", @"maxFragmentSamplers", @"maxFragmentTextures", @"maxColorAttachments",
+                           @"minConstantBufferAlignmentBytes", @"readWriteTextureSupport", @"argumentBuffersSupport" ]) {
+        SEL sel = NSSelectorFromString(n);
+        if (![(id)dev respondsToSelector:sel]) { printf("%s: not implemented\n", n.UTF8String); continue; }
+        NSMethodSignature *sig = [(id)dev methodSignatureForSelector:sel];
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        inv.selector = sel;
+        [inv invokeWithTarget:dev];
+        uint64_t v = 0;
+        [inv getReturnValue:&v];
+        if (sig.methodReturnLength == 1) v &= 0xff;
+        printf("%s = %llu\n", n.UTF8String, (unsigned long long)v);
+    }
+    const MTLPixelFormat fmts[] = { MTLPixelFormatASTC_4x4_LDR, MTLPixelFormatASTC_4x4_sRGB, MTLPixelFormatBGRA8Unorm,
+                                    MTLPixelFormatRGBA16Float, MTLPixelFormatBGR10_XR };
+    for (unsigned i = 0; i < sizeof fmts / sizeof *fmts; i++)
+        printf("minimumLinearTextureAlignmentForPixelFormat:%lu = %lu\n", (unsigned long)fmts[i],
+               (unsigned long)[dev minimumLinearTextureAlignmentForPixelFormat:fmts[i]]);
+}
+
+int main(int argc, char **argv) { @autoreleasepool {
+    if (argc > 2 && strcmp(argv[1], "caps") == 0 && strcmp(argv[2], "apple4") == 0) setenv("VMG_APPLE4", "1", 1);
     dev = TSMtlCreateDevice();
+    if (argc > 1 && strcmp(argv[1], "caps") == 0) { caps(); return 0; }
     queue = [dev newCommandQueue];
     NSError *err = nil;
     lib = [dev newLibraryWithSource:kMSL options:nil error:&err];
     if (!lib) { printf("library: %s\n", err.description.UTF8String); return 1; }
+
+    if (argc > 2 && strcmp(argv[1], "jobs") == 0) {
+        unsigned n = (unsigned)strtoul(argv[2], NULL, 0);
+        id<MTLBuffer> jb = [dev newBufferWithLength:256 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLComputePipelineState> jp = kpipe(@"square");
+        objects("before");
+        for (unsigned i = 0; i < n; i++) { @autoreleasepool {
+            run(^(id<MTLComputeCommandEncoder> e) {
+                [e setComputePipelineState:jp];
+                [e setBuffer:jb offset:0 atIndex:0];
+                [e dispatchThreadgroups:MTLSizeMake(4, 1, 1) threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+            });
+        }}
+        objects("after");
+        printf("%u command buffers\n", n);
+        return 0;
+    }
 
     printf("buffers\n");
     float v[256];
