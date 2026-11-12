@@ -8,6 +8,7 @@
 #include <string.h>
 #include <IOSurface/IOSurfaceRef.h>
 #include <TargetConditionals.h>
+#include <sys/sysctl.h>
 #include "nir.h"
 #include "nir_builder.h"
 #include "compiler/glsl_types.h"
@@ -588,6 +589,15 @@ static vmg_texture *texture_wrap(struct pipe_resource *res, const vmg_texture_de
     return t;
 }
 
+// Switches the kernel keeps for experiments (DEVELOPMENT kernels; 0 when absent): kern.mapple_gpu_linear makes every
+// render target linear, kern.mapple_gpu_surf_copy copies IOSurfaces in and out instead of importing them.
+static int kernel_switch(const char *name)
+{
+    int v = 0;
+    size_t len = sizeof(v);
+    return sysctlbyname(name, &v, &len, NULL, 0) == 0 ? v : 0;
+}
+
 vmg_texture *vmg_texture_create(vmg_device *dev, const vmg_texture_desc *d)
 {
     struct pipe_resource templ;
@@ -603,6 +613,11 @@ vmg_texture *vmg_texture_create(vmg_device *dev, const vmg_texture_desc *d)
     if (no_afbc && dev->panfrost && dev->screen->resource_create_with_modifiers && !d->render_target && !d->shader_write &&
         !d->memoryless && templ.target == PIPE_TEXTURE_2D && !templ.nr_samples) {
         uint64_t mod = DRM_FORMAT_MOD_ARM_16X16_BLOCK_U_INTERLEAVED;
+        res = dev->screen->resource_create_with_modifiers(dev->screen, &templ, &mod, 1);
+    }
+    if (!res && dev->panfrost && d->render_target && dev->screen->resource_create_with_modifiers &&
+        kernel_switch("kern.mapple_gpu_linear")) {
+        uint64_t mod = DRM_FORMAT_MOD_LINEAR;
         res = dev->screen->resource_create_with_modifiers(dev->screen, &templ, &mod, 1);
     }
     if (!res) res = dev->screen->resource_create(dev->screen, &templ);
@@ -640,7 +655,7 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
         wh.modifier = 0;   // DRM_FORMAT_MOD_LINEAR
         // Valhall wants linear rows aligned to 64 bytes: surfaces with other pitches (many of CoreAnimation's layer
         // surfaces) cannot be imported and get a separate texture, copied from/to the surface around each use.
-        if (wh.stride && !(wh.stride & 63))
+        if (wh.stride && !(wh.stride & 63) && !kernel_switch("kern.mapple_gpu_surf_copy"))
             res = dev->screen->resource_from_handle(dev->screen, &templ, &wh, PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
         vmg_drm_surface_fd_close((int)wh.handle);
         if (!res && wh.stride && !(wh.stride & 63) && logged < 32) {
