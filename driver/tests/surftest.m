@@ -6,9 +6,12 @@
 //   kern.mapple_gpu_surf_maint     after the job: CPU lines dropped at the next CPU access (0), at once (1), never (2)
 // and reads it back through IOSurfaceLock and the kernel's kern.mapple_gpu_surf_debug (DRAM, the CPU's view, after a
 // clean). The switches are back at 0 at the end. Usage: surftest [combination index]
+// surftest debug ID...: only the kernel's read-back of those surfaces (e.g. backboardd's, from the SURF: log)
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurfaceRef.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/sysctl.h>
 
 static int set(const char *name, int v)
@@ -23,6 +26,16 @@ static uint32_t at(IOSurfaceRef s, uint32_t x, uint32_t y)
 }
 
 int main(int argc, char **argv) { @autoreleasepool {
+    if (argc > 2 && strcmp(argv[1], "debug") == 0) {
+        for (int i = 2; i < argc; i++) {
+            uint32_t id = (uint32_t)strtoul(argv[i], NULL, 0);
+            char dbg[1024] = "";
+            size_t len = sizeof(dbg);
+            if (sysctlbyname("kern.mapple_gpu_surf_debug", dbg, &len, &id, sizeof(id)) == 0) printf("%s", dbg);
+            else printf("surface %u: %s\n", id, strerror(errno));
+        }
+        return 0;
+    }
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (!dev) { printf("no Metal device (link: gpu on, gpu publish)\n"); return 1; }
     id<MTLCommandQueue> q = [dev newCommandQueue];
