@@ -169,6 +169,7 @@ VM_CATCH_ALL(VMRenderPipelineState)
 
 - (id<MTLDevice>)device { return _device; }
 - (MTLRenderPipelineDescriptor *)descriptor { return _desc; }
+- (MTLRenderPipelineDescriptor *)traceDescriptor { return _desc; }
 - (BOOL)usesFallback { return _vmg == NULL; }   // metal-shim's tests ask
 - (BOOL)supportIndirectCommandBuffers { return NO; }
 - (NSUInteger)maxTotalThreadsPerThreadgroup { return 0; }

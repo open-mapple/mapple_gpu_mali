@@ -46,6 +46,7 @@ static void VMAttachment(vmg_attachment *out, MTLRenderPassAttachmentDescriptor 
     uint8_t _cull, _winding, _fill, _clip;   // Metal defaults: none, clockwise, fill, clip
     uint64_t _tracedSlots[3];                // stages' texture slots holding a traced (compressed) texture
     VMSamplerState *__unsafe_unretained _fragSamplers[16];   // for traces (kept alive by the command buffer)
+    VMPassCapture *_cap;
 }
 VM_CATCH_ALL(VMRenderEncoder)
 
@@ -65,6 +66,7 @@ VM_CATCH_ALL(VMRenderEncoder)
         }
         if (atomic_fetch_add(&lines, 1) < 64) fprintf(stderr, "vmg: pass %p:%s\n", (__bridge void *)self, a.UTF8String);
     }
+    if (VMCapTraceOn() && desc.colorAttachments[1].texture) _cap = [[VMPassCapture alloc] initWithPass:desc];
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {
         MTLRenderPassColorAttachmentDescriptor *c = desc.colorAttachments[i];
         if (!c.texture) continue;
@@ -95,6 +97,8 @@ VM_CATCH_ALL(VMRenderEncoder)
 }
 
 - (void)endEncoding {
+    [_cap finish];
+    _cap = nil;
     VMDevice *d = _device;
     [_cb recordCommand:^{ vmg_cmd_end_pass(d.vmg); }];
     [super endEncoding];
@@ -110,6 +114,7 @@ VM_CATCH_ALL(VMRenderEncoder)
     }
     VMRenderPipelineState *p = (VMRenderPipelineState *)state;
     _pipeline = p;
+    [_cap pipeline:p];
     [_cb keepAlive:p];
     if (!p.vmg) return;
     VMDevice *d = _device;
@@ -139,10 +144,13 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)setViewport:(MTLViewport)v {
     VMDevice *d = _device;
     vmg_viewport vp = { v.originX, v.originY, v.width, v.height, v.znear, v.zfar };
+    if (_cap) [_cap line:[NSString stringWithFormat:@"viewport %g %g %g %g %g %g", v.originX, v.originY, v.width, v.height, v.znear, v.zfar]];
     [_cb recordCommand:^{ vmg_cmd_set_viewport(d.vmg, &vp); }];
 }
 - (void)setViewports:(const MTLViewport *)viewports count:(NSUInteger)count { if (count) [self setViewport:viewports[0]]; }
 - (void)setScissorRect:(MTLScissorRect)r {
+    if (_cap) [_cap line:[NSString stringWithFormat:@"scissor %lu %lu %lu %lu", (unsigned long)r.x, (unsigned long)r.y,
+                          (unsigned long)r.width, (unsigned long)r.height]];
     VMDevice *d = _device;
     [_cb recordCommand:^{ vmg_cmd_set_scissor(d.vmg, (uint32_t)r.x, (uint32_t)r.y, (uint32_t)r.width, (uint32_t)r.height); }];
 }
@@ -150,6 +158,7 @@ VM_CATCH_ALL(VMRenderEncoder)
 
 // Raster state is kept here and sent whole (vmg caches the rasterizer objects).
 - (void)sendRaster:(uint8_t)cull winding:(uint8_t)winding fill:(uint8_t)fill clip:(uint8_t)clip {
+    if (_cap) [_cap line:[NSString stringWithFormat:@"raster %u %u %u %u", cull, winding, fill, clip]];
     VMDevice *d = _device;
     [_cb recordCommand:^{ vmg_cmd_set_raster(d.vmg, cull, winding, fill, clip); }];
 }
@@ -163,6 +172,7 @@ VM_CATCH_ALL(VMRenderEncoder)
 }
 - (void)setDepthStencilState:(id<MTLDepthStencilState>)state {
     VMDepthStencilState *s = (VMDepthStencilState *)state;
+    if (_cap) [_cap line:[NSString stringWithFormat:@"dss %@", s.label ?: @"-"]];
     [_cb keepAlive:s];
     VMDevice *d = _device;
     vmg_dsa *dsa = s.vmg;
@@ -174,6 +184,7 @@ VM_CATCH_ALL(VMRenderEncoder)
     [_cb recordCommand:^{ vmg_cmd_set_stencil_ref(d.vmg, front, back); }];
 }
 - (void)setBlendColorRed:(float)r green:(float)g blue:(float)b alpha:(float)a {
+    if (_cap) [_cap line:[NSString stringWithFormat:@"blendcolor %g %g %g %g", r, g, b, a]];
     VMDevice *d = _device;
     [_cb recordCommand:^{ float c[4] = { r, g, b, a }; vmg_cmd_set_blend_color(d.vmg, c); }];
 }
@@ -187,11 +198,13 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)bindBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset index:(NSUInteger)index stage:(enum vmg_stage)stage {
     VMDevice *d = _device;
     VMBuffer *b = (VMBuffer *)buffer;
+    [_cap buffer:buffer offset:offset index:index stage:(int)stage];
     if (b) [_cb keepAlive:b];
     vmg_resource *r = b.vmg;
     [_cb recordCommand:^{ vmg_cmd_set_buffer(d.vmg, stage, (unsigned)index, r, offset, 0); }];
 }
 - (void)bindOffset:(NSUInteger)offset index:(NSUInteger)index stage:(enum vmg_stage)stage {
+    [_cap offset:offset index:index stage:(int)stage];
     VMDevice *d = _device;
     [_cb recordCommand:^{ vmg_cmd_set_buffer_offset(d.vmg, stage, (unsigned)index, offset); }];
 }
@@ -214,6 +227,7 @@ VM_CATCH_ALL(VMRenderEncoder)
             _tracedSlots[stage] &= ~(1ull << index);
         }
     }
+    [_cap texture:texture index:index stage:(int)stage];
     if (t) [_cb keepAlive:t];
     [_cb useSurface:texture.iosurface];
     vmg_texture *v = t.vmg;
@@ -222,6 +236,7 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)bindSampler:(id<MTLSamplerState>)sampler index:(NSUInteger)index stage:(enum vmg_stage)stage {
     VMDevice *d = _device;
     VMSamplerState *s = (VMSamplerState *)sampler;
+    [_cap sampler:([s isKindOfClass:[VMSamplerState class]] ? s : nil) index:index stage:(int)stage];
     if (stage == VMG_FRAGMENT && index < 16) _fragSamplers[index] = [s isKindOfClass:[VMSamplerState class]] ? s : nil;
     if (s) [_cb keepAlive:s];
     vmg_sampler *v = s.vmg;
@@ -274,6 +289,7 @@ VM_CATCH_ALL(VMRenderEncoder)
                           _pipeline.vmg ? @"drawn" : @"NOT TRANSLATED, skipped: ", _pipeline.vmg ? @"" : _pipeline.failure,
                           _pipeline.fragmentResources, samplers);
     }
+    [_cap draw:info index:index];
     if (!_pipeline.vmg) return;   // pipeline not translated: skipped (logged at creation)
     VMDevice *d = _device;
     VMBuffer *ib = (VMBuffer *)index, *ind = (VMBuffer *)indirect;

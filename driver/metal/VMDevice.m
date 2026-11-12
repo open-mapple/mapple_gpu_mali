@@ -6,6 +6,7 @@
 #import "VMPrivate.h"
 #import <objc/runtime.h>
 #import <os/lock.h>
+#import <dlfcn.h>
 #import <stdatomic.h>
 #import <TargetConditionals.h>
 #import <sys/sysctl.h>
@@ -65,16 +66,25 @@ BOOL VMCapTraceOn(void) {
     return on;
 }
 
-void VMCapNote(NSString *question, uint64_t answer) {
+// Logged the first time and whenever the answer changes, with who asked (the caller's symbol).
+void VMCapNoteFrom(NSString *question, uint64_t answer, const void *caller) {
     static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
-    static NSMutableSet *seen;
+    static NSMutableDictionary<NSString *, NSNumber *> *last;
+    static int lines;
     os_unfair_lock_lock(&lock);
-    if (!seen) seen = [NSMutableSet set];
-    BOOL first = seen.count < 300 && ![seen containsObject:question];
-    if (first) [seen addObject:question];
+    if (!last) last = [NSMutableDictionary dictionary];
+    NSNumber *was = last[question];
+    BOOL log = lines < 300 && (!was || was.unsignedLongLongValue != answer);
+    if (log) { last[question] = @(answer); lines++; }
     os_unfair_lock_unlock(&lock);
-    if (first) fprintf(stderr, "vmg: cap %s = %llu\n", question.UTF8String, (unsigned long long)answer);
+    if (!log) return;
+    Dl_info info = {0};
+    const char *who = caller && dladdr(caller, &info) && info.dli_sname ? info.dli_sname : "?";
+    const char *img = info.dli_fname ? strrchr(info.dli_fname, '/') : NULL;
+    fprintf(stderr, "vmg: cap %s = %llu%s (from %s in %s)\n", question.UTF8String, (unsigned long long)answer,
+            was ? " (changed)" : "", who, img ? img + 1 : "?");
 }
+void VMCapNote(NSString *question, uint64_t answer) { VMCapNoteFrom(question, answer, __builtin_return_address(0)); }
 
 // Integer or BOOL answers with at most one integer argument.
 static void VMCapWrap(Class cls, SEL sel) {
@@ -87,7 +97,8 @@ static void VMCapWrap(Class cls, SEL sel) {
     IMP imp = imp_implementationWithBlock(^uint64_t(id self, uint64_t a) {
         uint64_t v = ((uint64_t (*)(id, SEL, uint64_t))orig)(self, sel, a);
         v &= strchr("BcC", ret) ? 0xff : strchr("iI", ret) ? 0xffffffffull : ~0ull;
-        VMCapNote(args ? [NSString stringWithFormat:@"%s%llu", sel_getName(sel), (unsigned long long)a] : @(sel_getName(sel)), v);
+        VMCapNoteFrom(args ? [NSString stringWithFormat:@"%s%llu", sel_getName(sel), (unsigned long long)a] : @(sel_getName(sel)), v,
+                      __builtin_return_address(0));
         return v;
     });
     if (!class_addMethod(cls, sel, imp, types)) method_setImplementation(m, imp);
@@ -103,8 +114,11 @@ static NSString *VMConstantsLine(MTLFunctionConstantValues *values) {
 
 static void VMFunctionNote(id<MTLFunction> f, NSString *name, MTLFunctionConstantValues *values) {
     static _Atomic int lines;
-    if (f && values && atomic_fetch_add(&lines, 1) < 160)
-        fprintf(stderr, "vmg: fn %p %s: %s\n", (__bridge void *)f, name.UTF8String, VMConstantsLine(values).UTF8String);
+    if (!f || !values) return;
+    NSString *line = VMConstantsLine(values);
+    VMCaptureSetConstants(f, line);
+    if (atomic_fetch_add(&lines, 1) < 160)
+        fprintf(stderr, "vmg: fn %p %s: %s\n", (__bridge void *)f, name.UTF8String, line.UTF8String);
 }
 
 static void VMCapTraceInstall(Class device) {

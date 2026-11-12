@@ -2,14 +2,20 @@
 // [[color(S)]] and writes the result (plus 0.1) to the other attachment, which is read back. The matrix: S = 0 or 1;
 // S memoryless or private; both draws in one encoder, a memory barrier between them, or two encoders (S stored, then
 // loaded; not for memoryless); the read as half4 (CoreAnimation's lph shaders) or float4. Then attachment 1 as A8Unorm
-// (a mask: Metal reads it back as (0, 0, 0, a)).
-// Usage: fbfetch [W H]   (default 256 256)
+// (a mask: Metal reads it back as (0, 0, 0, a)). Then CoreAnimation's shape on a memoryless attachment 1: the reading
+// draw blending into attachment 0 (one, one minus source alpha), the writing draw sampling an ASTC texture made with
+// newTextureWithBytesNoCopy (as CoreAnimation's images are), and both.
+// Usage: fbfetch [W H]   (default 256 256); fbfetch msl: the shaders' source
 #import <Metal/Metal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 
 id<MTLDevice> TSMtlCreateDevice(void);
+@interface NSObject (VMNoCopyTexture)
+- (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes length:(NSUInteger)length descriptor:(MTLTextureDescriptor *)desc
+                                deallocator:(void (^)(void *, NSUInteger))deallocator;
+@end
 
 static NSString *const kMSL = @
     "#include <metal_stdlib>\nusing namespace metal;\n"
@@ -22,6 +28,10 @@ static NSString *const kMSL = @
     "fragment Two get1h(half4 s [[color(1)]]) { Two o; o.c1 = s; o.c0 = s + half4(0.1h, 0.1h, 0.1h, 0); return o; }\n"
     "fragment TwoF get0f(float4 s [[color(0)]]) { TwoF o; o.c0 = s; o.c1 = s + float4(0.1, 0.1, 0.1, 0); return o; }\n"
     "fragment TwoF get1f(float4 s [[color(1)]]) { TwoF o; o.c1 = s; o.c0 = s + float4(0.1, 0.1, 0.1, 0); return o; }\n"
+    "struct VT { float4 pos [[position]]; float2 uv; };\n"
+    "vertex VT fs_quad_uv(uint v [[vertex_id]]) { float2 p = float2((v << 1) & 2, v & 2); VT o; o.pos = float4(p * 2 - 1, 0, 1); o.uv = p; return o; }\n"
+    "fragment Two putT(VT i [[stage_in]], texture2d<half> t [[texture(3)]]) { constexpr sampler s(filter::linear);\n"
+    "  Two o; o.c0 = half4(0); o.c1 = t.sample(s, i.uv); return o; }\n"
     "fragment Two putA() { Two o; o.c0 = half4(0); o.c1 = half4(0.2h, 0.4h, 0.6h, 0.8h); return o; }\n"
     "fragment Two getA(half4 s [[color(1)]]) { Two o; o.c1 = s; o.c0 = half4(s.a, s.a, s.a, 1.0h); return o; }\n";
 
@@ -29,6 +39,25 @@ static id<MTLDevice> dev;
 static id<MTLLibrary> lib;
 
 // Writes only attachment `only` (the other's write mask off).
+static id<MTLRenderPipelineState> rpipe2(NSString *frag, int only, MTLPixelFormat f1, BOOL blend0) {
+    MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
+    d.vertexFunction = [lib newFunctionWithName:[frag isEqualToString:@"putT"] ? @"fs_quad_uv" : @"fs_quad"];
+    if (blend0) {
+        d.colorAttachments[0].blendingEnabled = YES;
+        d.colorAttachments[0].sourceRGBBlendFactor = d.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        d.colorAttachments[0].destinationRGBBlendFactor = d.colorAttachments[0].destinationAlphaBlendFactor =
+            MTLBlendFactorOneMinusSourceAlpha;
+    }
+    d.fragmentFunction = [lib newFunctionWithName:frag];
+    for (int i = 0; i < 2; i++) {
+        d.colorAttachments[i].pixelFormat = i == 1 ? f1 : MTLPixelFormatBGRA8Unorm;
+        d.colorAttachments[i].writeMask = i == only ? MTLColorWriteMaskAll : MTLColorWriteMaskNone;
+    }
+    NSError *e = nil;
+    id<MTLRenderPipelineState> p = [dev newRenderPipelineStateWithDescriptor:d error:&e];
+    if (!p) printf("pipeline %s: %s\n", frag.UTF8String, e.description.UTF8String);
+    return p;
+}
 static id<MTLRenderPipelineState> rpipe(NSString *frag, int only, MTLPixelFormat f1) {
     MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
     d.vertexFunction = [lib newFunctionWithName:@"fs_quad"];
@@ -47,6 +76,7 @@ enum { ONE, BARRIER, TWO };
 static const char *const kMode[] = { "one encoder", "barrier between", "two encoders" };
 
 int main(int argc, char **argv) { @autoreleasepool {
+    if (argc > 1 && strcmp(argv[1], "msl") == 0) { printf("%s", kMSL.UTF8String); return 0; }   // the source, for cafetch-replay
     unsigned w = argc > 2 ? (unsigned)atoi(argv[1]) : 256, h = argc > 2 ? (unsigned)atoi(argv[2]) : 256;
     dev = TSMtlCreateDevice();
     NSError *err = nil;
@@ -148,6 +178,63 @@ int main(int argc, char **argv) { @autoreleasepool {
         int ok = !cb.error && abs(c[0] - 204) <= 3 && abs(c[1] - 204) <= 3 && abs(c[2] - 204) <= 3;
         printf("%s S=1 A8 %-10s %-15s half : rgb %3u %3u %3u (expected 204 204 204)\n", ok ? "ok  " : "FAIL",
                memless ? "memoryless" : "private", kMode[mode], c[2], c[1], c[0]);
+        fails += !ok;
+    }}
+    // CoreAnimation's shape: attachment 1 memoryless; the writer (attachment 1 only) plain or sampling ASTC, the reader
+    // (attachment 0 only) plain or blending. ASTC: one void-extent block per 4x4, the colour (0.2, 0.4, 0.6, 1).
+    for (int astc = 0; astc < 2; astc++)
+    for (int blend = 0; blend < 2; blend++) { @autoreleasepool {
+        if (!astc && !blend) continue;
+        MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                     width:w height:h mipmapped:NO];
+        td.usage = MTLTextureUsageRenderTarget;
+        td.storageMode = MTLStorageModeMemoryless;
+        id<MTLTexture> c1 = [dev newTextureWithDescriptor:td];
+        td.storageMode = MTLStorageModeShared;
+        id<MTLTexture> out = [dev newTextureWithDescriptor:td];
+        id<MTLTexture> img = nil;
+        if (astc) {
+            size_t blocks = (size_t)((w + 3) / 4) * ((h + 3) / 4), len = (blocks * 16 + 16383) & ~(size_t)16383;
+            uint8_t *bytes = valloc(len);
+            static const uint8_t blk[16] = { 0xfc, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                             0x33, 0x33, 0x66, 0x66, 0x99, 0x99, 0xff, 0xff };
+            for (size_t b = 0; b < blocks; b++) memcpy(bytes + 16 * b, blk, 16);
+            MTLTextureDescriptor *ad = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatASTC_4x4_LDR
+                                                                                         width:w height:h mipmapped:NO];
+            ad.usage = MTLTextureUsageShaderRead;
+            ad.storageMode = MTLStorageModeShared;
+            if ([(id)dev respondsToSelector:@selector(newTextureWithBytesNoCopy:length:descriptor:deallocator:)])
+                img = [(id)dev newTextureWithBytesNoCopy:bytes length:blocks * 16 descriptor:ad
+                                             deallocator:^(void *p, NSUInteger l) { (void)l; free(p); }];
+            if (!img) { printf("ASTC: newTextureWithBytesNoCopy not there\n"); free(bytes); fails++; continue; }
+        }
+        id<MTLRenderPipelineState> p1 = rpipe2(astc ? @"putT" : @"put", 1, MTLPixelFormatBGRA8Unorm, NO),
+                                   p2 = rpipe2(@"get1h", 0, MTLPixelFormatBGRA8Unorm, blend);
+        if (!c1 || !out || !p1 || !p2) { fails++; continue; }
+        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        rp.colorAttachments[0].texture = out;
+        rp.colorAttachments[1].texture = c1;
+        for (int i = 0; i < 2; i++) {
+            rp.colorAttachments[i].loadAction = MTLLoadActionClear;
+            rp.colorAttachments[i].clearColor = MTLClearColorMake(0, 0, 0, i ? 0 : 1);
+            rp.colorAttachments[i].storeAction = i ? MTLStoreActionDontCare : MTLStoreActionStore;
+        }
+        id<MTLCommandBuffer> cb = [q commandBuffer];
+        id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
+        [e setRenderPipelineState:p1];
+        if (img) [e setFragmentTexture:img atIndex:3];
+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        [e setRenderPipelineState:p2];
+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        [e endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        runs++;
+        [out getBytes:px bytesPerRow:(size_t)w * 4 fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
+        const uint8_t *c = px + 4 * ((size_t)(h / 2) * w + w / 2);
+        int ok = !cb.error && abs(c[0] - 179) <= 3 && abs(c[1] - 128) <= 3 && abs(c[2] - 77) <= 3;
+        printf("%s S=1 CA memoryless %s writer, %s reader: rgb %3u %3u %3u (expected 77 128 179)\n", ok ? "ok  " : "FAIL",
+               astc ? "ASTC-sampling" : "plain", blend ? "blending" : "plain", c[2], c[1], c[0]);
         fails += !ok;
     }}
     printf("%d/%d passed\n", runs - fails, runs);

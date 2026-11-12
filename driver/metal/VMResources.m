@@ -320,6 +320,7 @@ VM_CATCH_ALL(VMTexture)
 }
 
 - (BOOL)traced { return _traced; }
+- (NSData *)noCopyData { return _noCopyBytes ? [NSData dataWithBytesNoCopy:_noCopyBytes length:_noCopyLength freeWhenDone:NO] : nil; }
 
 - (void)dealloc {
     vmg_texture *t = _vmg;

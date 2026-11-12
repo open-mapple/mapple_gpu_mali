@@ -56,12 +56,14 @@ $(OUT)/phase3: $(SHIM)/tests/phase2.m $(OUT)/libMappleMetal.dylib
 $(OUT)/phase1 $(OUT)/translate $(OUT)/uploads: $(OUT)/%: $(SHIM)/tests/%.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) -I$(SHIM)/src $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
 
-metal: $(OUT)/libMappleMetal.dylib $(addprefix $(OUT)/,$(SHIM_TESTS)) $(OUT)/compute $(OUT)/fbfetch $(OUT)/ca $(OUT)/isatest $(OUT)/bounds
+metal: $(OUT)/libMappleMetal.dylib $(addprefix $(OUT)/,$(SHIM_TESTS)) $(OUT)/compute $(OUT)/fbfetch $(OUT)/cafetch-replay $(OUT)/ca $(OUT)/isatest $(OUT)/bounds
 test-metal: metal
 	@for t in $(SHIM_TESTS); do echo "== $$t (llvmpipe)"; $(OUT)/$$t | tail -2 || exit 1; done
 $(OUT)/compute: tests/compute.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
 $(OUT)/fbfetch: tests/fbfetch.m $(OUT)/libMappleMetal.dylib
+	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
+$(OUT)/cafetch-replay: tests/cafetch-replay.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@
 $(OUT)/bounds: tests/bounds.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -o $@

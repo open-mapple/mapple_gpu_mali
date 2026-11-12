@@ -212,6 +212,7 @@ void TSMtlInstallLayerTuning(void);
 - (void)setNoCopyBytes:(void *)bytes length:(NSUInteger)length deallocator:(void (^)(void *, NSUInteger))deallocator;
 // a texture from newTextureWithBytesNoCopy, or a view of one: its uses are traced (VMTraceCompressed)
 @property (readonly) BOOL traced;
+@property (readonly) NSData *noCopyData;         // newTextureWithBytesNoCopy's bytes (no copy), else nil
 @property (readonly) vmg_texture *vmg;
 @end
 
@@ -239,7 +240,22 @@ NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 @property (readonly) NSString *failure;
 @property (readonly) NSString *functionNames;    // "vertex/fragment", for traces
 @property (readonly) NSString *fragmentResources; // what the translated fragment shader reads, for traces
+@property (readonly) MTLRenderPipelineDescriptor *traceDescriptor;   // kept with the capability trace on (pass capture)
 @end
+
+// Pass capture (VMCapture.m): the encoder reports a pass's state and draws to it; written out at endEncoding.
+@interface VMPassCapture : NSObject
+- (instancetype)initWithPass:(MTLRenderPassDescriptor *)desc;
+- (void)pipeline:(VMRenderPipelineState *)p;
+- (void)buffer:(id<MTLBuffer>)b offset:(NSUInteger)o index:(NSUInteger)i stage:(int)s;
+- (void)offset:(NSUInteger)o index:(NSUInteger)i stage:(int)s;
+- (void)texture:(id<MTLTexture>)t index:(NSUInteger)i stage:(int)s;
+- (void)sampler:(VMSamplerState *)smp index:(NSUInteger)i stage:(int)s;
+- (void)line:(NSString *)l;
+- (void)draw:(vmg_draw_info)info index:(id<MTLBuffer>)index;
+- (void)finish;
+@end
+void VMCaptureSetConstants(id function, NSString *line);
 
 @interface VMComputePipelineState : _MTLObjectWithLabel <MTLComputePipelineState>
 - (instancetype)initWithDevice:(VMDevice *)device function:(id<MTLFunction>)function error:(NSError **)error;
