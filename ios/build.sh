@@ -110,6 +110,9 @@ tests() {
   local T="$OUT/tests"; mkdir -p "$T"
   $CC $TARGET -O2 -g "$GPU/vgpu/test_vgpu.c" "$GPU/vgpu/vgpu.c" "$GPU/vgpu/vgpu_mock.c" "$GPU/vgpu/vgpu_iokit.c" \
       -framework IOKit -framework IOSurface -framework CoreFoundation -o "$T/test_vgpu"
+  $CC $TARGET -O2 -g -I"$GPU/libdrm-xnu/include" -I"$GPU/libdrm-xnu/include/libdrm" "$GPU/libdrm-xnu/test_maps.c" \
+      "$GPU/libdrm-xnu/src/xf86drm_xnu.c" "$GPU/vgpu/vgpu.c" "$GPU/vgpu/vgpu_mock.c" "$GPU/vgpu/vgpu_iokit.c" \
+      -framework IOKit -framework IOSurface -framework CoreFoundation -o "$T/test_maps"
   # metal-shim's tests against the installed driver: on the phone Metal finds VMDevice through the kernel
   # service; TSMtlCreateDevice comes from a small shim that returns MTLCreateSystemDefaultDevice().
   echo '#import <Metal/Metal.h>
@@ -129,6 +132,7 @@ void TSMtlRegisterGLSL(id a, id b) {}' > "$OUT/obj/tsdevice.m"
       -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework CoreText -framework UniformTypeIdentifiers \
       -framework IOSurface -o "$T/ca"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/astctest.m" -framework Foundation -framework Metal -o "$T/astctest"
+  $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/fbfetch.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal -o "$T/fbfetch"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/passbench.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal \
       -framework IOSurface -o "$T/passbench"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/isatest.m" "$GPU/driver/tests/isa_cases.m" "$OUT/obj/tsdevice.m" \

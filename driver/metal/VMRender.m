@@ -55,6 +55,16 @@ VM_CATCH_ALL(VMRenderEncoder)
     _device = (VMDevice *)cb.device;
     vmg_pass_desc pass = {0};
     NSMutableArray *keep = [NSMutableArray array];
+    if (VMCapTraceOn() && desc.colorAttachments[1].texture) {   // passes with more than one colour attachment
+        static _Atomic int lines;
+        NSMutableString *a = [NSMutableString string];
+        for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {
+            MTLRenderPassColorAttachmentDescriptor *c = desc.colorAttachments[i];
+            if (c.texture) [a appendFormat:@" c%u format %lu storage %lu load %lu store %lu;", i, (unsigned long)c.texture.pixelFormat,
+                            (unsigned long)c.texture.storageMode, (unsigned long)c.loadAction, (unsigned long)c.storeAction];
+        }
+        if (atomic_fetch_add(&lines, 1) < 64) fprintf(stderr, "vmg: pass %p:%s\n", (__bridge void *)self, a.UTF8String);
+    }
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {
         MTLRenderPassColorAttachmentDescriptor *c = desc.colorAttachments[i];
         if (!c.texture) continue;
@@ -108,6 +118,9 @@ VM_CATCH_ALL(VMRenderEncoder)
 }
 
 - (void)dispatchThreadsPerTile:(MTLSize)threads {
+    static _Atomic int lines;
+    if (VMCapTraceOn() && atomic_fetch_add(&lines, 1) < 64)
+        fprintf(stderr, "vmg: pass %p: tile dispatch (the pass is split)\n", (__bridge void *)self);
     vmg_compute_pipeline *k = _tile.kernel.vmg;
     if (!k) return;
     VMDevice *d = _device;
@@ -256,8 +269,8 @@ VM_CATCH_ALL(VMRenderEncoder)
         for (int i = 0; i < 16; i++) {
             if (_fragSamplers[i]) [samplers appendFormat:@" [s%d %@]", i, _fragSamplers[i].traceState];
         }
-        VMTraceCompressed(@"draw with compressed texture(s) bound (vertex 0x%llx fragment 0x%llx): pipeline %@ %@%@; %@;%@",
-                          _tracedSlots[VMG_VERTEX], _tracedSlots[VMG_FRAGMENT], _pipeline.functionNames,
+        VMTraceCompressed(@"draw in pass %p with compressed texture(s) bound (vertex 0x%llx fragment 0x%llx): pipeline %@ %@%@; %@;%@",
+                          (__bridge void *)self, _tracedSlots[VMG_VERTEX], _tracedSlots[VMG_FRAGMENT], _pipeline.functionNames,
                           _pipeline.vmg ? @"drawn" : @"NOT TRANSLATED, skipped: ", _pipeline.vmg ? @"" : _pipeline.failure,
                           _pipeline.fragmentResources, samplers);
     }
@@ -320,6 +333,9 @@ VM_CATCH_ALL(VMRenderEncoder)
 #pragma mark Barriers and residency
 
 - (void)recordBarrier {
+    static _Atomic int lines;
+    if (VMCapTraceOn() && atomic_fetch_add(&lines, 1) < 64)
+        fprintf(stderr, "vmg: pass %p: barrier between draws (the pass is split)\n", (__bridge void *)self);
     VMDevice *d = _device;
     [_cb recordCommand:^{ vmg_cmd_barrier(d.vmg); }];
 }
