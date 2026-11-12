@@ -251,6 +251,40 @@ TSPixelFormatInfo TSPixelFormatGetInfo(MTLPixelFormat f) {
     case MTLPixelFormatBC5_RGUnorm: case MTLPixelFormatBC5_RGSnorm: case MTLPixelFormatBC6H_RGBFloat: case MTLPixelFormatBC6H_RGBUfloat:
     case MTLPixelFormatBC7_RGBAUnorm: case MTLPixelFormatBC7_RGBAUnorm_sRGB:
         return (TSPixelFormatInfo){16, 4, 4};
+    case MTLPixelFormatEAC_R11Unorm: case MTLPixelFormatEAC_R11Snorm: case MTLPixelFormatETC2_RGB8: case MTLPixelFormatETC2_RGB8_sRGB:
+    case MTLPixelFormatETC2_RGB8A1: case MTLPixelFormatETC2_RGB8A1_sRGB:
+        return (TSPixelFormatInfo){8, 4, 4};
+    case MTLPixelFormatEAC_RG11Unorm: case MTLPixelFormatEAC_RG11Snorm: case MTLPixelFormatEAC_RGBA8: case MTLPixelFormatEAC_RGBA8_sRGB:
+        return (TSPixelFormatInfo){16, 4, 4};
+    // ASTC: 16 bytes a block (CoreAnimation's compressed images are 4x4, through newTextureWithBytesNoCopy)
+    case MTLPixelFormatASTC_4x4_sRGB: case MTLPixelFormatASTC_4x4_LDR: case MTLPixelFormatASTC_4x4_HDR:
+        return (TSPixelFormatInfo){16, 4, 4};
+    case MTLPixelFormatASTC_5x4_sRGB: case MTLPixelFormatASTC_5x4_LDR: case MTLPixelFormatASTC_5x4_HDR:
+        return (TSPixelFormatInfo){16, 5, 4};
+    case MTLPixelFormatASTC_5x5_sRGB: case MTLPixelFormatASTC_5x5_LDR: case MTLPixelFormatASTC_5x5_HDR:
+        return (TSPixelFormatInfo){16, 5, 5};
+    case MTLPixelFormatASTC_6x5_sRGB: case MTLPixelFormatASTC_6x5_LDR: case MTLPixelFormatASTC_6x5_HDR:
+        return (TSPixelFormatInfo){16, 6, 5};
+    case MTLPixelFormatASTC_6x6_sRGB: case MTLPixelFormatASTC_6x6_LDR: case MTLPixelFormatASTC_6x6_HDR:
+        return (TSPixelFormatInfo){16, 6, 6};
+    case MTLPixelFormatASTC_8x5_sRGB: case MTLPixelFormatASTC_8x5_LDR: case MTLPixelFormatASTC_8x5_HDR:
+        return (TSPixelFormatInfo){16, 8, 5};
+    case MTLPixelFormatASTC_8x6_sRGB: case MTLPixelFormatASTC_8x6_LDR: case MTLPixelFormatASTC_8x6_HDR:
+        return (TSPixelFormatInfo){16, 8, 6};
+    case MTLPixelFormatASTC_8x8_sRGB: case MTLPixelFormatASTC_8x8_LDR: case MTLPixelFormatASTC_8x8_HDR:
+        return (TSPixelFormatInfo){16, 8, 8};
+    case MTLPixelFormatASTC_10x5_sRGB: case MTLPixelFormatASTC_10x5_LDR: case MTLPixelFormatASTC_10x5_HDR:
+        return (TSPixelFormatInfo){16, 10, 5};
+    case MTLPixelFormatASTC_10x6_sRGB: case MTLPixelFormatASTC_10x6_LDR: case MTLPixelFormatASTC_10x6_HDR:
+        return (TSPixelFormatInfo){16, 10, 6};
+    case MTLPixelFormatASTC_10x8_sRGB: case MTLPixelFormatASTC_10x8_LDR: case MTLPixelFormatASTC_10x8_HDR:
+        return (TSPixelFormatInfo){16, 10, 8};
+    case MTLPixelFormatASTC_10x10_sRGB: case MTLPixelFormatASTC_10x10_LDR: case MTLPixelFormatASTC_10x10_HDR:
+        return (TSPixelFormatInfo){16, 10, 10};
+    case MTLPixelFormatASTC_12x10_sRGB: case MTLPixelFormatASTC_12x10_LDR: case MTLPixelFormatASTC_12x10_HDR:
+        return (TSPixelFormatInfo){16, 12, 10};
+    case MTLPixelFormatASTC_12x12_sRGB: case MTLPixelFormatASTC_12x12_LDR: case MTLPixelFormatASTC_12x12_HDR:
+        return (TSPixelFormatInfo){16, 12, 12};
     default: // 32-bit formats (RGBA8, BGRA8, RGB10A2, RG16, R32, Depth32Float, Depth24Stencil8, ...) and unknown ones
         return (TSPixelFormatInfo){4, 1, 1};
     }
