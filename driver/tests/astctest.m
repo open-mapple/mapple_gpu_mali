@@ -1,9 +1,16 @@
 // astctest: an ASTC 4x4 texture through the Metal driver, as PosterBoard's snapshots are stored (Apple's AAPL texture
-// files, *.atx: a header, then the 4x4 blocks row by row). The blocks go in by replaceRegion and by a blit from a
-// buffer; each texture is drawn (sampled) into a BGRA target the same size and read back.
+// files, *.atx: chunks of u32 length, 4-byte tag, data; the 4x4 blocks row by row in the "astc" chunk after its size). The blocks go in
+// by replaceRegion, by a blit from a buffer and by newTextureWithBytesNoCopy (CoreAnimation's way for these images);
+// each texture is drawn (sampled) into a BGRA target the same size and read back.
 // Usage: astctest FILE.atx [OUT.ppm]   (the first drawing is written as a PPM, for a look on the Mac)
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+
+// SPI CoreAnimation calls for compressed images (CA::OGL::MetalContext::update_texture)
+@interface NSObject (VMNoCopyTexture)
+- (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes length:(NSUInteger)length descriptor:(MTLTextureDescriptor *)desc
+                                deallocator:(void (^)(void *, NSUInteger))deallocator;
+@end
 
 static NSString *const kMSL =
     @"#include <metal_stdlib>\nusing namespace metal;\n"
@@ -46,8 +53,15 @@ int main(int argc, char **argv) { @autoreleasepool {
         printf("format 0x%x %ux%u, %zu bytes: not ASTC 4x4 or too short (want %zu)\n", fmt, w, h, (size_t)file.length, need);
         return 1;
     }
-    const uint8_t *blocks = f + file.length - need;        // the blocks end the file
-    printf("%s: ASTC 4x4 %ux%u, %zu bytes of blocks after a %zu-byte header\n", argv[1], w, h, need, (size_t)file.length - need);
+    const uint8_t *blocks = NULL;
+    for (size_t at = 8; at + 8 <= file.length;) {
+        uint32_t len;
+        memcpy(&len, f + at, 4);
+        if (memcmp(f + at + 4, "astc", 4) == 0 && at + 12 + need <= file.length) { blocks = f + at + 12; break; }
+        at += 8 + (size_t)len;       // u32 length, tag, then length bytes (the astc chunk's start with its own u32 size)
+    }
+    if (!blocks) { printf("%s: no astc chunk with %zu bytes\n", argv[1], need); return 1; }
+    printf("%s: ASTC 4x4 %ux%u, %zu bytes of blocks at 0x%zx\n", argv[1], w, h, need, (size_t)(blocks - f));
 
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (!dev) { printf("no Metal device\n"); return 1; }
@@ -73,15 +87,32 @@ int main(int argc, char **argv) { @autoreleasepool {
     uint8_t *px = malloc((size_t)w * h * 4);
     int fails = 0;
 
-    for (int way = 0; way < 2; way++) {
+    for (int way = 0; way < 3; way++) {
         MTLTextureDescriptor *ad = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatASTC_4x4_LDR width:w height:h mipmapped:NO];
         ad.usage = MTLTextureUsageShaderRead;
         ad.storageMode = way == 0 ? MTLStorageModeShared : MTLStorageModePrivate;
-        id<MTLTexture> astc = [dev newTextureWithDescriptor:ad];
-        const char *what = way == 0 ? "replaceRegion, shared" : "blit from a buffer, private";
+        if (way == 2) ad.storageMode = MTLStorageModeShared;
+        void *nocopy = NULL;
+        if (way == 2) {
+            size_t page = (size_t)getpagesize(), len = (need + page - 1) / page * page;
+            nocopy = valloc(len);
+            memcpy(nocopy, blocks, need);
+        }
+        if (way == 2 && ![(id)dev respondsToSelector:@selector(newTextureWithBytesNoCopy:length:descriptor:deallocator:)]) {
+            printf("newTextureWithBytesNoCopy: not implemented by this device\n");
+            free(nocopy);
+            fails++;
+            continue;
+        }
+        id<MTLTexture> astc = way == 2 ? [(id)dev newTextureWithBytesNoCopy:nocopy length:need descriptor:ad
+                                                               deallocator:^(void *p, NSUInteger l) { (void)l; free(p); }]
+                                       : [dev newTextureWithDescriptor:ad];
+        const char *what = way == 0 ? "replaceRegion, shared" : way == 1 ? "blit from a buffer, private"
+                                                                       : "newTextureWithBytesNoCopy";
         if (!astc) { printf("%s: no ASTC texture from the device\n", what); fails++; continue; }
         id<MTLCommandBuffer> cb = [q commandBuffer];
-        if (way == 0) {
+        if (way == 2) {
+        } else if (way == 0) {
             [astc replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:blocks bytesPerRow:bpr];
         } else {
             id<MTLBuffer> buf = [dev newBufferWithBytes:blocks length:need options:MTLResourceStorageModeShared];
