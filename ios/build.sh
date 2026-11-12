@@ -123,6 +123,8 @@ void TSMtlRegisterGLSL(id a, id b) {}' > "$OUT/obj/tsdevice.m"
   done
   $CC $TARGET -fobjc-arc -O1 -g "$HERE/vmprobe.m" -framework Foundation -framework Metal -o "$T/vmprobe"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/compute.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal -o "$T/compute"
+  $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/surftest.m" -framework Foundation -framework Metal -framework IOSurface \
+      -o "$T/surftest"
   $CC $TARGET -fobjc-arc -O1 -g "$GPU/driver/tests/ca.m" "$OUT/obj/tsdevice.m" -framework Foundation -framework Metal \
       -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework CoreText -framework UniformTypeIdentifiers \
       -framework IOSurface -o "$T/ca"
