@@ -4,8 +4,65 @@
 // the GPU queue, ordered after the work submitted before it.
 #import "VMPrivate.h"
 #import <stdatomic.h>
+#include "../vmg_shm_stats.h"
+#include <notify.h>
+#include <os/lock.h>
 
 #define VM_CATCH_ALL(cls) + (void)initialize { if (self == [cls class]) TSMtlInstallCatchAll(self); }
+
+#pragma mark - Live objects
+
+// This process's live buffers and textures, written to VMG_SHM_STATS_DIR/<pid>.objects when the Darwin notification
+// com.mapple.gpu.objects is posted (mstat gpu objects): one line each, then totals by kind.
+@interface NSObject (VMLive)
+- (NSString *)vmLiveLine:(uint64_t *)bytes kind:(const char **)kind;
+@end
+
+static NSHashTable *gLive;
+static os_unfair_lock gLiveLock = OS_UNFAIR_LOCK_INIT;
+
+static const char *VMLiveKind(int k) {
+    static const char *kinds[] = { "buffer", "render target", "memoryless", "MSAA", "depth/stencil", "IOSurface import",
+                                   "view or over a buffer", "sampled only" };
+    return kinds[k];
+}
+
+static void VMLiveDump(void) {
+    os_unfair_lock_lock(&gLiveLock);
+    NSArray *all = gLive.allObjects;
+    os_unfair_lock_unlock(&gLiveLock);
+    char path[128];
+    snprintf(path, sizeof path, VMG_SHM_STATS_DIR "/%d.objects", getpid());
+    FILE *f = fopen(path, "w");
+    if (!f) return;
+    uint64_t n[8] = {0}, b[8] = {0};
+    for (id o in all) {
+        uint64_t bytes = 0;
+        const char *kind = NULL;
+        NSString *line = [o vmLiveLine:&bytes kind:&kind];
+        for (int k = 0; k < 8; k++) {
+            if (kind == VMLiveKind(k)) { n[k]++; b[k] += bytes; }
+        }
+        fprintf(f, "%s\n", line.UTF8String);
+    }
+    for (int k = 0; k < 8; k++) {
+        fprintf(f, "total %s: %llu, %llu KiB\n", VMLiveKind(k), (unsigned long long)n[k], (unsigned long long)(b[k] >> 10));
+    }
+    fclose(f);
+}
+
+static void VMLiveAdd(id o) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gLive = [NSHashTable weakObjectsHashTable];
+        int token;
+        notify_register_dispatch("com.mapple.gpu.objects", &token, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0),
+                                 ^(int t) { (void)t; VMLiveDump(); });
+    });
+    os_unfair_lock_lock(&gLiveLock);
+    [gLive addObject:o];
+    os_unfair_lock_unlock(&gLiveLock);
+}
 
 #pragma mark - Buffer
 
@@ -36,7 +93,15 @@ VM_CATCH_ALL(VMBuffer)
     if (!_vmg) return nil;
     _contents = contents;
     [device trackAllocation:(int64_t)length];
+    VMLiveAdd(self);
     return self;
+}
+
+- (NSString *)vmLiveLine:(uint64_t *)bytes kind:(const char **)kind {
+    *bytes = _length;
+    *kind = VMLiveKind(0);
+    return [NSString stringWithFormat:@"buffer %lu bytes options 0x%lx%@ %@", (unsigned long)_length,
+            (unsigned long)_options, _userBytes ? @" (user memory)" : @"", self.label ?: @""];
 }
 
 - (void)dealloc {
@@ -155,6 +220,7 @@ VM_CATCH_ALL(VMTexture)
                    (unsigned long)desc.pixelFormat, (unsigned long)desc.textureType);
         return nil;
     }
+    VMLiveAdd(self);
     return self;
 }
 
@@ -169,6 +235,7 @@ VM_CATCH_ALL(VMTexture)
     __block vmg_texture *t = NULL;
     [device gpuSync:^{ t = vmg_texture_create_buffer(device.vmg, &td, buffer.vmg, offset, bytesPerRow); }];
     _vmg = t;
+    if (_vmg) VMLiveAdd(self);
     return _vmg ? self : nil;
 }
 
@@ -194,7 +261,32 @@ VM_CATCH_ALL(VMTexture)
     _vmg = vmg_texture_create_view(_device.vmg, parent.vmg, (unsigned)format, VMTextureType(type, _desc.sampleCount),
                                    (uint32_t)levels.location, (uint32_t)levels.length, (uint32_t)slices.location,
                                    (uint32_t)slices.length, swizzle ? sw : NULL);
+    if (_vmg) VMLiveAdd(self);
     return _vmg ? self : nil;
+}
+
+// Bytes from the descriptor (as heapTextureSizeAndAlignWithDescriptor: computes them; AFBC headers not counted); views,
+// IOSurface imports and textures over a buffer own none.
+- (NSString *)vmLiveLine:(uint64_t *)bytes kind:(const char **)kind {
+    MTLTextureDescriptor *d = _desc;
+    MTLPixelFormat pf = d.pixelFormat;
+    BOOL depth = pf >= 250 && pf <= 262;   /* Depth16Unorm .. X24_Stencil8 */
+    *bytes = 0;
+    if (_parent || _buffer) *kind = VMLiveKind(6);
+    else if (_surface) *kind = VMLiveKind(5);
+    else {
+        *bytes = [_strongDevice heapTextureSizeAndAlignWithDescriptor:d].size;
+        if (d.storageMode == MTLStorageModeMemoryless) *kind = VMLiveKind(2);
+        else if (d.sampleCount > 1) *kind = VMLiveKind(3);
+        else if (depth) *kind = VMLiveKind(4);
+        else if (d.usage & MTLTextureUsageRenderTarget) *kind = VMLiveKind(1);
+        else *kind = VMLiveKind(7);
+    }
+    return [NSString stringWithFormat:@"texture %lux%lux%lu format %lu type %lu mips %lu samples %lu usage 0x%lx storage %lu: %s, "
+            "%llu KiB%@ %@", (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.depth, (unsigned long)pf,
+            (unsigned long)d.textureType, (unsigned long)d.mipmapLevelCount, (unsigned long)d.sampleCount,
+            (unsigned long)d.usage, (unsigned long)d.storageMode, *kind, (unsigned long long)(*bytes >> 10),
+            _surface ? [NSString stringWithFormat:@" IOSurface %u", IOSurfaceGetID(_surface)] : @"", self.label ?: @""];
 }
 
 - (void)dealloc {
