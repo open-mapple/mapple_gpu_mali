@@ -210,6 +210,8 @@ void TSMtlInstallLayerTuning(void);
                         offset:(NSUInteger)offset bytesPerRow:(NSUInteger)bytesPerRow;
 // newTextureWithBytesNoCopy: the caller's memory, handed to its deallocator when the texture is released
 - (void)setNoCopyBytes:(void *)bytes length:(NSUInteger)length deallocator:(void (^)(void *, NSUInteger))deallocator;
+// a texture from newTextureWithBytesNoCopy, or a view of one: its uses are traced (VMTraceCompressed)
+@property (readonly) BOOL traced;
 @property (readonly) vmg_texture *vmg;
 @end
 
@@ -222,6 +224,9 @@ void TSMtlInstallLayerTuning(void);
 @property (readonly) vmg_dsa *vmg;
 @end
 
+// One line on stderr (backboardd's goes to the console) about a compressed texture's use; at most 256 per process.
+void VMTraceCompressed(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
+
 // AIR bitcode of a function (specialized, as Metal hands it to drivers) and of its linked visible functions.
 NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 
@@ -229,6 +234,7 @@ NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 - (instancetype)initWithDevice:(VMDevice *)device descriptor:(MTLRenderPipelineDescriptor *)desc error:(NSError **)error;
 @property (readonly) vmg_render_pipeline *vmg;   // NULL when the shaders could not be translated (draws are skipped)
 @property (readonly) NSString *failure;
+@property (readonly) NSString *functionNames;    // "vertex/fragment", for traces
 @end
 
 @interface VMComputePipelineState : _MTLObjectWithLabel <MTLComputePipelineState>

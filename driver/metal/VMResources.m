@@ -10,6 +10,18 @@
 
 #define VM_CATCH_ALL(cls) + (void)initialize { if (self == [cls class]) TSMtlInstallCatchAll(self); }
 
+#pragma mark - Compressed texture trace
+
+void VMTraceCompressed(NSString *fmt, ...) {
+    static _Atomic int lines;
+    if (atomic_fetch_add(&lines, 1) >= 256) return;
+    va_list ap;
+    va_start(ap, fmt);
+    NSString *s = [[NSString alloc] initWithFormat:fmt arguments:ap];
+    va_end(ap);
+    fprintf(stderr, "vmg: trace %s\n", s.UTF8String);
+}
+
 #pragma mark - Live objects
 
 // This process's live buffers and textures, written to VMG_SHM_STATS_DIR/<pid>.objects when the Darwin notification
@@ -199,6 +211,7 @@ static vmg_texture_desc VMTextureDesc(MTLTextureDescriptor *d) {
     void *_noCopyBytes;
     NSUInteger _noCopyLength;
     void (^_noCopyDeallocator)(void *, NSUInteger);
+    BOOL _traced;
 }
 VM_CATCH_ALL(VMTexture)
 
@@ -261,6 +274,13 @@ VM_CATCH_ALL(VMTexture)
     _plane = parent->_plane;
     _swizzle = swizzle ? *swizzle : parent->_swizzle;
     uint8_t sw[4] = { (uint8_t)_swizzle.red, (uint8_t)_swizzle.green, (uint8_t)_swizzle.blue, (uint8_t)_swizzle.alpha };
+    _traced = parent->_traced;
+    if (_traced) {
+        VMTraceCompressed(@"view %p of %p: format %lu type %lu levels %lu+%lu slices %lu+%lu swizzle %u%u%u%u", self, parent,
+                          (unsigned long)format, (unsigned long)type, (unsigned long)levels.location,
+                          (unsigned long)levels.length, (unsigned long)slices.location, (unsigned long)slices.length,
+                          sw[0], sw[1], sw[2], sw[3]);
+    }
     _vmg = vmg_texture_create_view(_device.vmg, parent.vmg, (unsigned)format, VMTextureType(type, _desc.sampleCount),
                                    (uint32_t)levels.location, (uint32_t)levels.length, (uint32_t)slices.location,
                                    (uint32_t)slices.length, swizzle ? sw : NULL);
@@ -296,7 +316,10 @@ VM_CATCH_ALL(VMTexture)
     _noCopyBytes = bytes;
     _noCopyLength = length;
     _noCopyDeallocator = [deallocator copy];
+    _traced = YES;
 }
+
+- (BOOL)traced { return _traced; }
 
 - (void)dealloc {
     vmg_texture *t = _vmg;

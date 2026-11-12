@@ -44,6 +44,7 @@ static void VMAttachment(vmg_attachment *out, MTLRenderPassAttachmentDescriptor 
     VMTilePipelineState *_tile;
     uint32_t _tileW, _tileH;
     uint8_t _cull, _winding, _fill, _clip;   // Metal defaults: none, clockwise, fill, clip
+    uint64_t _tracedSlots[3];                // stages' texture slots holding a traced (compressed) texture
 }
 VM_CATCH_ALL(VMRenderEncoder)
 
@@ -188,6 +189,17 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)bindTexture:(id<MTLTexture>)texture index:(NSUInteger)index stage:(enum vmg_stage)stage {
     VMDevice *d = _device;
     VMTexture *t = (VMTexture *)texture;
+    if (stage < 3 && index < 64) {
+        BOOL traced = [t isKindOfClass:[VMTexture class]] && t.traced;
+        if (traced) {
+            VMTraceCompressed(@"bind %p (%lux%lu format %lu) stage %d slot %lu, pipeline %@", t, (unsigned long)t.width,
+                              (unsigned long)t.height, (unsigned long)t.pixelFormat, (int)stage, (unsigned long)index,
+                              _pipeline.functionNames);
+            _tracedSlots[stage] |= 1ull << index;
+        } else {
+            _tracedSlots[stage] &= ~(1ull << index);
+        }
+    }
     if (t) [_cb keepAlive:t];
     [_cb useSurface:texture.iosurface];
     vmg_texture *v = t.vmg;
@@ -237,6 +249,11 @@ VM_CATCH_ALL(VMRenderEncoder)
 #pragma mark Draws
 
 - (void)draw:(vmg_draw_info)info index:(id<MTLBuffer>)index indirect:(id<MTLBuffer>)indirect {
+    if (_tracedSlots[0] | _tracedSlots[1] | _tracedSlots[2]) {
+        VMTraceCompressed(@"draw with compressed texture(s) bound (vertex 0x%llx fragment 0x%llx): pipeline %@ %@%@",
+                          _tracedSlots[VMG_VERTEX], _tracedSlots[VMG_FRAGMENT], _pipeline.functionNames,
+                          _pipeline.vmg ? @"drawn" : @"NOT TRANSLATED, skipped: ", _pipeline.vmg ? @"" : _pipeline.failure);
+    }
     if (!_pipeline.vmg) return;   // pipeline not translated: skipped (logged at creation)
     VMDevice *d = _device;
     VMBuffer *ib = (VMBuffer *)index, *ind = (VMBuffer *)indirect;

@@ -2,6 +2,7 @@
 // A pipeline whose functions cannot be translated still exists (never nil, as in metal-shim): its draws/dispatches
 // are skipped and -failure says why (logged once).
 #import "VMPrivate.h"
+#import <stdatomic.h>
 
 #define VM_CATCH_ALL(cls) + (void)initialize { if (self == [cls class]) TSMtlInstallCatchAll(self); }
 
@@ -132,9 +133,15 @@ VM_CATCH_ALL(VMRenderPipelineState)
         if (!rp) failure = [NSString stringWithFormat:@"pipeline state: %s", err ? err : "?"];
         free(err);
     }
+    _functionNames = [NSString stringWithFormat:@"%@/%@", desc.vertexFunction.name, desc.fragmentFunction.name];
     if (failure) {
         _failure = failure;
         TSMtlError(@"render pipeline %@ (%@/%@) not drawable: %@", desc.label, desc.vertexFunction.name, desc.fragmentFunction.name, failure);
+        static _Atomic int logged;
+        if (atomic_fetch_add(&logged, 1) < 32) {
+            fprintf(stderr, "vmg: render pipeline %s (%s) not drawable: %s\n", desc.label.UTF8String ?: "",
+                    _functionNames.UTF8String, failure.UTF8String);
+        }
     }
     TSMtlStatAlways(TSStatPipelines, 1);
     if (failure) TSMtlStatAlways(TSStatFallbacks, 1);

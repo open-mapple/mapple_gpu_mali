@@ -18,6 +18,15 @@ static VMDevice *VMEncoderDevice(_MTLCommandEncoder *enc) { return (VMDevice *)[
 @interface VMBlitEncoder : _MTLCommandEncoder <MTLBlitCommandEncoder>
 @end
 
+// A blit touching a compressed texture from newTextureWithBytesNoCopy (VMTraceCompressed).
+static void VMTraceBlit(const char *op, id<MTLTexture> src, id<MTLTexture> dst) {
+    BOOL s = [(id)src isKindOfClass:[VMTexture class]] && ((VMTexture *)src).traced;
+    BOOL d = [(id)dst isKindOfClass:[VMTexture class]] && ((VMTexture *)dst).traced;
+    if (s || d) {
+        VMTraceCompressed(@"blit %s: src %p%s dst %p%s", op, src, s ? " (compressed)" : "", dst, d ? " (compressed)" : "");
+    }
+}
+
 @implementation VMBlitEncoder
 VM_CATCH_ALL(VMBlitEncoder)
 
@@ -39,6 +48,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 - (void)copyFromBuffer:(id<MTLBuffer>)src sourceOffset:(NSUInteger)off sourceBytesPerRow:(NSUInteger)bpr
    sourceBytesPerImage:(NSUInteger)bpi sourceSize:(MTLSize)size toTexture:(id<MTLTexture>)dst destinationSlice:(NSUInteger)slice
       destinationLevel:(NSUInteger)level destinationOrigin:(MTLOrigin)o options:(MTLBlitOption)options {
+    VMTraceBlit("buffer -> texture", nil, dst);
     VMDevice *d = VMEncoderDevice(self);
     VMBuffer *b = (VMBuffer *)src;
     VMTexture *t = (VMTexture *)dst;
@@ -52,6 +62,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 - (void)copyFromBuffer:(id<MTLBuffer>)src sourceOffset:(NSUInteger)off sourceBytesPerRow:(NSUInteger)bpr
    sourceBytesPerImage:(NSUInteger)bpi sourceSize:(MTLSize)size toTexture:(id<MTLTexture>)dst destinationSlice:(NSUInteger)slice
       destinationLevel:(NSUInteger)level destinationOrigin:(MTLOrigin)o {
+    VMTraceBlit("buffer -> texture", nil, dst);
     [self copyFromBuffer:src sourceOffset:off sourceBytesPerRow:bpr sourceBytesPerImage:bpi sourceSize:size toTexture:dst
         destinationSlice:slice destinationLevel:level destinationOrigin:o options:MTLBlitOptionNone];
 }
@@ -59,6 +70,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 - (void)copyFromTexture:(id<MTLTexture>)src sourceSlice:(NSUInteger)slice sourceLevel:(NSUInteger)level sourceOrigin:(MTLOrigin)o
              sourceSize:(MTLSize)size toBuffer:(id<MTLBuffer>)dst destinationOffset:(NSUInteger)off
  destinationBytesPerRow:(NSUInteger)bpr destinationBytesPerImage:(NSUInteger)bpi options:(MTLBlitOption)options {
+    VMTraceBlit("texture -> buffer", src, nil);
     VMDevice *d = VMEncoderDevice(self);
     VMTexture *t = (VMTexture *)src;
     VMBuffer *b = (VMBuffer *)dst;
@@ -72,6 +84,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 - (void)copyFromTexture:(id<MTLTexture>)src sourceSlice:(NSUInteger)slice sourceLevel:(NSUInteger)level sourceOrigin:(MTLOrigin)o
              sourceSize:(MTLSize)size toBuffer:(id<MTLBuffer>)dst destinationOffset:(NSUInteger)off
  destinationBytesPerRow:(NSUInteger)bpr destinationBytesPerImage:(NSUInteger)bpi {
+    VMTraceBlit("texture -> buffer", src, nil);
     [self copyFromTexture:src sourceSlice:slice sourceLevel:level sourceOrigin:o sourceSize:size toBuffer:dst
         destinationOffset:off destinationBytesPerRow:bpr destinationBytesPerImage:bpi options:MTLBlitOptionNone];
 }
@@ -79,6 +92,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 - (void)copyFromTexture:(id<MTLTexture>)src sourceSlice:(NSUInteger)ss sourceLevel:(NSUInteger)sl sourceOrigin:(MTLOrigin)so
              sourceSize:(MTLSize)size toTexture:(id<MTLTexture>)dst destinationSlice:(NSUInteger)ds
        destinationLevel:(NSUInteger)dl destinationOrigin:(MTLOrigin)dorg {
+    VMTraceBlit("texture -> texture", src, dst);
     VMDevice *d = VMEncoderDevice(self);
     VMTexture *s = (VMTexture *)src, *t = (VMTexture *)dst;
     [VMEncoderCB(self) useSurface:src.iosurface];
@@ -92,6 +106,7 @@ VM_CATCH_ALL(VMBlitEncoder)
 
 - (void)copyFromTexture:(id<MTLTexture>)src sourceSlice:(NSUInteger)ss sourceLevel:(NSUInteger)sl toTexture:(id<MTLTexture>)dst
        destinationSlice:(NSUInteger)ds destinationLevel:(NSUInteger)dl sliceCount:(NSUInteger)sliceCount levelCount:(NSUInteger)levelCount {
+    VMTraceBlit("texture -> texture (levels)", src, dst);
     for (NSUInteger s = 0; s < sliceCount; s++)
         for (NSUInteger l = 0; l < levelCount; l++) {
             NSUInteger lvl = sl + l;
@@ -103,12 +118,14 @@ VM_CATCH_ALL(VMBlitEncoder)
 }
 
 - (void)copyFromTexture:(id<MTLTexture>)src toTexture:(id<MTLTexture>)dst {
+    VMTraceBlit("texture -> texture (whole)", src, dst);
     NSUInteger slices = src.arrayLength * (src.textureType == MTLTextureTypeCube || src.textureType == MTLTextureTypeCubeArray ? 6 : 1);
     [self copyFromTexture:src sourceSlice:0 sourceLevel:0 toTexture:dst destinationSlice:0 destinationLevel:0
                sliceCount:slices levelCount:MIN(src.mipmapLevelCount, dst.mipmapLevelCount)];
 }
 
 - (void)generateMipmapsForTexture:(id<MTLTexture>)texture {
+    VMTraceBlit("generate mipmaps", texture, nil);
     if (texture.mipmapLevelCount < 2) return;
     VMDevice *d = VMEncoderDevice(self);
     VMTexture *t = (VMTexture *)texture;
@@ -374,6 +391,12 @@ static void VMSurfaceUse(const void *value, void *ctx) {
 }
 
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)desc {
+    for (NSUInteger i = 0; i < 8; i++) {
+        VMTexture *t = (VMTexture *)desc.colorAttachments[i].texture;
+        if ([t isKindOfClass:[VMTexture class]] && t.traced) {
+            VMTraceCompressed(@"compressed texture %p is render pass attachment %lu", t, (unsigned long)i);
+        }
+    }
     id<MTLRenderCommandEncoder> e = VMNewRenderEncoder(self, desc);
     [self setCurrentCommandEncoder:e];
     return e;
