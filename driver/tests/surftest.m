@@ -7,6 +7,7 @@
 // and reads it back through IOSurfaceLock and the kernel's kern.mapple_gpu_surf_debug (DRAM, the CPU's view, after a
 // clean). The switches are back at 0 at the end. Usage: surftest [combination index]
 // surftest debug ID...: only the kernel's read-back of those surfaces (e.g. backboardd's, from the SURF: log)
+// surftest set UNCACHED COPY LINEAR MAINT: only sets the switches and leaves them (for the UI started after it)
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurfaceRef.h>
@@ -26,6 +27,15 @@ static uint32_t at(IOSurfaceRef s, uint32_t x, uint32_t y)
 }
 
 int main(int argc, char **argv) { @autoreleasepool {
+    if (argc == 6 && strcmp(argv[1], "set") == 0) {
+        const char *names[4] = { "kern.mapple_gpu_surf_uncached", "kern.mapple_gpu_surf_copy", "kern.mapple_gpu_linear",
+                                 "kern.mapple_gpu_surf_maint" };
+        for (int i = 0; i < 4; i++) {
+            if (set(names[i], atoi(argv[2 + i]))) { printf("%s: %s\n", names[i], strerror(errno)); return 1; }
+            printf("%s=%d\n", names[i], atoi(argv[2 + i]));
+        }
+        return 0;
+    }
     if (argc > 2 && strcmp(argv[1], "debug") == 0) {
         for (int i = 2; i < argc; i++) {
             uint32_t id = (uint32_t)strtoul(argv[i], NULL, 0);
