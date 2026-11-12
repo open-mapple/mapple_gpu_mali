@@ -1,0 +1,125 @@
+XNU (Open Mapple): the BO cache also drops stale BOs when one is fetched and at each batch submit
+(kern.mapple_gpu_bocache, 1 when absent); the embedding driver can empty it and read its size, by screen.
+
+--- a/src/gallium/drivers/panfrost/pan_bo.c
++++ b/src/gallium/drivers/panfrost/pan_bo.c
+@@ -11,6 +11,7 @@
+ 
+ #include "pan_bo.h"
+ #include "pan_device.h"
++#include "pan_screen.h"
+ #include "pan_trace.h"
+ #include "pan_util.h"
+ #include "wrap.h"
+@@ -20,6 +21,34 @@
+ #include "util/u_inlines.h"
+ #include "util/u_math.h"
+ 
++#ifdef __APPLE__
++#include <sys/sysctl.h>
++#include <time.h>
++#endif
++
++/* XNU (Open Mapple): kern.mapple_gpu_bocache, 1 when absent. Stale BOs are also dropped when one is fetched from the
++ * cache and at each batch submit, so a process that stops freeing BOs does not keep its cache for ever. */
++static bool
++pan_bo_cache_trim_enabled(void)
++{
++#ifdef __APPLE__
++   static int on = 1;
++   static time_t checked;
++   time_t now = time(NULL);
++   if (now != checked) {
++      int v = 1;
++      size_t len = sizeof(v);
++      on = sysctlbyname("kern.mapple_gpu_bocache", &v, &len, NULL, 0) == 0 ? v != 0 : 1;
++      checked = now;
++   }
++   return on;
++#else
++   return false;
++#endif
++}
++
++static void panfrost_bo_cache_evict_stale_bos(struct panfrost_device *dev);
++
+ /* This file implements a userspace BO cache. Allocating and freeing
+  * GPU-visible buffers is very expensive, and even the extra kernel roundtrips
+  * adds more work than we would like at this point. So caching BOs in userspace
+@@ -229,6 +258,8 @@
+                         uint32_t flags, const char *label, bool dontwait)
+ {
+    pthread_mutex_lock(&dev->bo_cache.lock);
++   if (pan_bo_cache_trim_enabled())
++      panfrost_bo_cache_evict_stale_bos(dev);
+    struct list_head *bucket = pan_bucket(dev, size);
+    struct panfrost_bo *bo = NULL;
+ 
+@@ -346,6 +377,42 @@
+    pthread_mutex_unlock(&dev->bo_cache.lock);
+ }
+ 
++/* XNU (Open Mapple): stale BOs out at a batch submit (kern.mapple_gpu_bocache). */
++void
++panfrost_bo_cache_trim(struct panfrost_device *dev)
++{
++   if (!pan_bo_cache_trim_enabled())
++      return;
++   pthread_mutex_lock(&dev->bo_cache.lock);
++   panfrost_bo_cache_evict_stale_bos(dev);
++   pthread_mutex_unlock(&dev->bo_cache.lock);
++}
++
++/* XNU (Open Mapple): what the cache holds, for the driver's statistics. */
++size_t
++panfrost_bo_cache_bytes(struct panfrost_device *dev)
++{
++   size_t bytes = 0;
++   pthread_mutex_lock(&dev->bo_cache.lock);
++   list_for_each_entry(struct panfrost_bo, entry, &dev->bo_cache.lru, lru_link)
++      bytes += panfrost_bo_size(entry);
++   pthread_mutex_unlock(&dev->bo_cache.lock);
++   return bytes;
++}
++
++/* XNU (Open Mapple): the same for the embedding driver, by screen. */
++void
++panfrost_screen_bo_cache_empty(struct pipe_screen *screen)
++{
++   panfrost_bo_cache_evict_all(pan_device(screen));
++}
++
++size_t
++panfrost_screen_bo_cache_bytes(struct pipe_screen *screen)
++{
++   return panfrost_bo_cache_bytes(pan_device(screen));
++}
++
+ int
+ panfrost_bo_mmap(struct panfrost_bo *bo)
+ {
+--- a/src/gallium/drivers/panfrost/pan_bo.h
++++ b/src/gallium/drivers/panfrost/pan_bo.h
+@@ -133,6 +133,11 @@
+ struct panfrost_bo *panfrost_bo_import(struct panfrost_device *dev, int fd);
+ int panfrost_bo_export(struct panfrost_bo *bo);
+ void panfrost_bo_cache_evict_all(struct panfrost_device *dev);
++void panfrost_bo_cache_trim(struct panfrost_device *dev);
++size_t panfrost_bo_cache_bytes(struct panfrost_device *dev);
++struct pipe_screen;
++void panfrost_screen_bo_cache_empty(struct pipe_screen *screen);
++size_t panfrost_screen_bo_cache_bytes(struct pipe_screen *screen);
+ 
+ const char *panfrost_bo_replace_label(struct panfrost_bo *bo, const char *label,
+                                       bool set_kernel_label);
+--- a/src/gallium/drivers/panfrost/pan_job.c
++++ b/src/gallium/drivers/panfrost/pan_job.c
+@@ -687,6 +687,8 @@
+    struct panfrost_screen *screen = pan_screen(pscreen);
+    bool has_frag = panfrost_has_fragment_job(batch);
+    int ret;
++
++   panfrost_bo_cache_trim(pan_device(pscreen));
+ 
+    /* Nothing to do! */
+    if (!has_frag && batch->compute_count == 0 && !batch->has_time_query)
