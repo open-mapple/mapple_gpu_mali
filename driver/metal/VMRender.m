@@ -45,6 +45,7 @@ static void VMAttachment(vmg_attachment *out, MTLRenderPassAttachmentDescriptor 
     uint32_t _tileW, _tileH;
     uint8_t _cull, _winding, _fill, _clip;   // Metal defaults: none, clockwise, fill, clip
     uint64_t _tracedSlots[3];                // stages' texture slots holding a traced (compressed) texture
+    VMSamplerState *__unsafe_unretained _fragSamplers[16];   // for traces (kept alive by the command buffer)
 }
 VM_CATCH_ALL(VMRenderEncoder)
 
@@ -208,6 +209,7 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)bindSampler:(id<MTLSamplerState>)sampler index:(NSUInteger)index stage:(enum vmg_stage)stage {
     VMDevice *d = _device;
     VMSamplerState *s = (VMSamplerState *)sampler;
+    if (stage == VMG_FRAGMENT && index < 16) _fragSamplers[index] = [s isKindOfClass:[VMSamplerState class]] ? s : nil;
     if (s) [_cb keepAlive:s];
     vmg_sampler *v = s.vmg;
     float mn = s.lodMin, mx = s.lodMax;
@@ -250,9 +252,14 @@ VM_CATCH_ALL(VMRenderEncoder)
 
 - (void)draw:(vmg_draw_info)info index:(id<MTLBuffer>)index indirect:(id<MTLBuffer>)indirect {
     if (_tracedSlots[0] | _tracedSlots[1] | _tracedSlots[2]) {
-        VMTraceCompressed(@"draw with compressed texture(s) bound (vertex 0x%llx fragment 0x%llx): pipeline %@ %@%@",
+        NSMutableString *samplers = [NSMutableString string];
+        for (int i = 0; i < 16; i++) {
+            if (_fragSamplers[i]) [samplers appendFormat:@" [s%d %@]", i, _fragSamplers[i].traceState];
+        }
+        VMTraceCompressed(@"draw with compressed texture(s) bound (vertex 0x%llx fragment 0x%llx): pipeline %@ %@%@; %@;%@",
                           _tracedSlots[VMG_VERTEX], _tracedSlots[VMG_FRAGMENT], _pipeline.functionNames,
-                          _pipeline.vmg ? @"drawn" : @"NOT TRANSLATED, skipped: ", _pipeline.vmg ? @"" : _pipeline.failure);
+                          _pipeline.vmg ? @"drawn" : @"NOT TRANSLATED, skipped: ", _pipeline.vmg ? @"" : _pipeline.failure,
+                          _pipeline.fragmentResources, samplers);
     }
     if (!_pipeline.vmg) return;   // pipeline not translated: skipped (logged at creation)
     VMDevice *d = _device;

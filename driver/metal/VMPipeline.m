@@ -30,7 +30,8 @@ static NSArray<NSArray *> *VMLinkedBitcode(MTLLinkedFunctions *lf) {
 
 // Translates one function into a vmg shader on the GPU queue (create_*_state is a context call).
 static vmg_shader *VMShaderFor(VMDevice *device, id<MTLFunction> function, MTLLinkedFunctions *linked,
-                               NSArray<NSString *> *varyings, const uint32_t *colorFormats, NSString **failure) {
+                               NSArray<NSString *> *varyings, const uint32_t *colorFormats, NSString **failure,
+                               vmg_reflection *refl) {
     NSData *bitcode = VMBitcodeOfFunction(function);
     if (!bitcode) { *failure = [NSString stringWithFormat:@"%@: no AIR bitcode", function.name]; return NULL; }
     NSArray<NSArray *> *lb = VMLinkedBitcode(linked);
@@ -47,7 +48,7 @@ static vmg_shader *VMShaderFor(VMDevice *device, id<MTLFunction> function, MTLLi
                          .color_formats = colorFormats };
     __block vmg_shader *sh = NULL;
     __block char *error = NULL;
-    [device gpuSync:^{ sh = vmg_shader_create(device.vmg, &in, NULL, &error); }];
+    [device gpuSync:^{ sh = vmg_shader_create(device.vmg, &in, refl, &error); }];
     if (!sh) *failure = [NSString stringWithFormat:@"%@: %s", function.name, error ? error : "translation failed"];
     free(error);
     free(lptr); free(lsize); free(lname); free(vk);
@@ -61,8 +62,14 @@ static vmg_shader *VMShaderFor(VMDevice *device, id<MTLFunction> function, MTLLi
     VMDevice *_strongDevice;
     MTLRenderPipelineDescriptor *_desc;
     vmg_shader *_vs, *_fs;
+    vmg_reflection _fsRefl;
 }
 VM_CATCH_ALL(VMRenderPipelineState)
+
+- (NSString *)fragmentResources {
+    return [NSString stringWithFormat:@"fragment textures 0x%x samplers 0x%x+%u constexpr", _fsRefl.textures_used,
+            _fsRefl.samplers_used, _fsRefl.constexpr_samplers];
+}
 
 - (instancetype)initWithDevice:(VMDevice *)device descriptor:(MTLRenderPipelineDescriptor *)desc error:(NSError **)error {
     if (!(self = [super init])) return nil;
@@ -84,9 +91,9 @@ VM_CATCH_ALL(VMRenderPipelineState)
     uint32_t formats[VMG_MAX_COLOR] = {0};
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) formats[i] = (uint32_t)desc.colorAttachments[i].pixelFormat;
     if (!desc.vertexFunction) failure = @"no vertex function";
-    if (!failure) _vs = VMShaderFor(device, desc.vertexFunction, desc.vertexLinkedFunctions, varyings, NULL, &failure);
+    if (!failure) _vs = VMShaderFor(device, desc.vertexFunction, desc.vertexLinkedFunctions, varyings, NULL, &failure, NULL);
     if (!failure && desc.fragmentFunction)
-        _fs = VMShaderFor(device, desc.fragmentFunction, desc.fragmentLinkedFunctions, varyings, formats, &failure);
+        _fs = VMShaderFor(device, desc.fragmentFunction, desc.fragmentLinkedFunctions, varyings, formats, &failure, &_fsRefl);
 
     if (!failure) {
         vmg_render_pipeline_desc p = {0};
@@ -192,7 +199,7 @@ VM_CATCH_ALL(VMComputePipelineState)
     for (id<MTLFunction> f in linked.functions) if (VMBitcodeOfFunction(f) && f.name) [names addObject:f.name];
     _linkedNames = names;
     NSString *failure = nil;
-    _kernel = VMShaderFor(device, function, linked, @[], NULL, &failure);
+    _kernel = VMShaderFor(device, function, linked, @[], NULL, &failure, NULL);
     if (_kernel) {
         __block vmg_compute_pipeline *p = NULL;
         __block char *err = NULL;

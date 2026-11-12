@@ -3,7 +3,7 @@
 // by replaceRegion, by a blit from a buffer and by newTextureWithBytesNoCopy (CoreAnimation's way for these images);
 // each texture is drawn (sampled) into a BGRA target the same size and read back.
 // The no-copy texture must hand its memory to the deallocator when it is released, not before.
-// Usage: astctest FILE.atx [OUT.ppm [usage=N | view]]   (the first drawing as a PPM; the no-copy texture with another
+// Usage: astctest FILE.atx [OUT.ppm [usage=N | view | half]]   (the first drawing as a PPM; the no-copy texture with another
 // usage, or sampled through a view, as CoreAnimation may)
 // On the Mac against this driver (llvmpipe): built with -DVMG_TEST_DYLIB and linked to libMappleMetal.dylib.
 #import <Foundation/Foundation.h>
@@ -22,6 +22,10 @@ static NSString *const kMSL =
      "fragment float4 show(VOut i [[stage_in]], texture2d<float> t [[texture(0)]]) {\n"
      "  constexpr sampler s(filter::linear);\n"
      "  return t.sample(s, i.pos.xy / float2(t.get_width(), t.get_height()));\n"
+     "}\n"
+     "fragment half4 show_half(VOut i [[stage_in]], texture2d<half> t [[texture(0)]]) {\n"
+     "  constexpr sampler s(filter::linear);\n"
+     "  return t.sample(s, float2(i.pos.xy) / float2(t.get_width(), t.get_height()));\n"
      "}\n";
 
 static void summary(const char *what, const uint8_t *px, uint32_t w, uint32_t h)
@@ -82,7 +86,8 @@ int main(int argc, char **argv) { @autoreleasepool {
     if (!lib) { printf("library: %s\n", err.description.UTF8String); return 1; }
     MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
     pd.vertexFunction = [lib newFunctionWithName:@"fs_quad"];
-    pd.fragmentFunction = [lib newFunctionWithName:@"show"];
+    BOOL half = argc > 3 && strcmp(argv[3], "half") == 0;    // sampled as texture2d<half> (CoreAnimation's lph shaders)
+    pd.fragmentFunction = [lib newFunctionWithName:half ? @"show_half" : @"show"];
     pd.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
     id<MTLRenderPipelineState> pipe = [dev newRenderPipelineStateWithDescriptor:pd error:&err];
     if (!pipe) { printf("pipeline: %s\n", err.description.UTF8String); return 1; }

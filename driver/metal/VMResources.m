@@ -423,6 +423,14 @@ VM_CATCH_ALL(VMTexture)
 }
 VM_CATCH_ALL(VMSamplerState)
 
+- (NSString *)traceState {
+    MTLSamplerDescriptor *d = _desc;
+    return [NSString stringWithFormat:@"min %lu mag %lu mip %lu address %lu %lu border %lu lod %g..%g aniso %lu compare %lu",
+            (unsigned long)d.minFilter, (unsigned long)d.magFilter, (unsigned long)d.mipFilter, (unsigned long)d.sAddressMode,
+            (unsigned long)d.tAddressMode, (unsigned long)d.borderColor, d.lodMinClamp, d.lodMaxClamp,
+            (unsigned long)d.maxAnisotropy, (unsigned long)d.compareFunction];
+}
+
 - (instancetype)initWithDevice:(id)device samplerDescriptor:(MTLSamplerDescriptor *)desc {
     if (!(self = [super initWithDevice:device samplerDescriptor:desc])) return nil;
     _desc = [desc copy];

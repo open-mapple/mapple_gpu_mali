@@ -218,6 +218,7 @@ void TSMtlInstallLayerTuning(void);
 @interface VMSamplerState : _MTLSamplerState <MTLSamplerState>
 @property (readonly) vmg_sampler *vmg;
 @property (readonly) float lodMin, lodMax;
+@property (readonly) NSString *traceState;   // its descriptor, for traces
 @end
 
 @interface VMDepthStencilState : _MTLDepthStencilState <MTLDepthStencilState>
@@ -235,6 +236,7 @@ NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 @property (readonly) vmg_render_pipeline *vmg;   // NULL when the shaders could not be translated (draws are skipped)
 @property (readonly) NSString *failure;
 @property (readonly) NSString *functionNames;    // "vertex/fragment", for traces
+@property (readonly) NSString *fragmentResources; // what the translated fragment shader reads, for traces
 @end
 
 @interface VMComputePipelineState : _MTLObjectWithLabel <MTLComputePipelineState>
