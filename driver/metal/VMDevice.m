@@ -14,6 +14,7 @@
 // Implemented by _MTLDevice (checked at runtime), not declared in its header.
 @interface _MTLDevice (VMLibraries)
 - (id<MTLLibrary>)newLibraryWithURL:(NSURL *)url error:(NSError **)error;
+- (void)initFeatureQueries;
 @end
 
 // MTLDeviceFeatureProfile. macOS: 10001 = Mac2 + Common1..3 (probed by metal-shim). iOS 16: an A10's profile
@@ -174,6 +175,9 @@ static const void *const VMGPUQueueKey = &VMGPUQueueKey;
         dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0));
     [self fillLimits];
     [self initGPUFamilySupport];
+    // _MTLAddDevice makes the feature queries (memoryless, native FP16, ...) only after the device exists; until then
+    // they answer NO, and backboardd asks before that. Made here, they give the profile's answers from the start.
+    if ([_MTLDevice instancesRespondToSelector:@selector(initFeatureQueries)]) [self initFeatureQueries];
     TSMtlInstallLayerTuning();
     VMShmStatsInit();
     VMWatchMemoryPressure(_gpuQueue);
