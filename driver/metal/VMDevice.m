@@ -341,6 +341,12 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
                    (unsigned long)desc.arrayLength);
         return nil;
     }
+    static _Atomic int logged;
+    if (atomic_fetch_add(&logged, 1) < 64) {
+        fprintf(stderr, "vmg: compressed image %lux%lu format %lu, %lu levels, %lu bytes\n", (unsigned long)desc.width,
+                (unsigned long)desc.height, (unsigned long)desc.pixelFormat, (unsigned long)desc.mipmapLevelCount,
+                (unsigned long)length);
+    }
     VMTexture *t = [[VMTexture alloc] initWithDevice:self descriptor:desc iosurface:NULL plane:0];
     TSPixelFormatInfo pf = TSPixelFormatGetInfo(desc.pixelFormat);
     NSUInteger w = desc.width, h = desc.height, off = 0;
