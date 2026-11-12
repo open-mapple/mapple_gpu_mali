@@ -333,7 +333,7 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
 // SPI: CoreAnimation's compressed images (CA::OGL::MetalContext::update_texture, the ASTC .atx snapshots of the lock
 // screen posters). On Apple GPUs the bytes are in the GPU's own tiled layout; this device makes no texture layouts
 // (newTextureLayoutWithDescriptor: answers nil), so ImageIO hands them over linear: rows of blocks, mip levels one after
-// another. They are copied into an ordinary texture.
+// another. They are copied into an ordinary texture; the deallocator gets them back when the texture is released.
 - (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes length:(NSUInteger)length descriptor:(MTLTextureDescriptor *)desc
                                 deallocator:(void (^)(void *, NSUInteger))deallocator {
     if (desc.textureType != MTLTextureType2D || desc.arrayLength != 1) {
@@ -353,7 +353,8 @@ typedef struct { uint64_t type; uint32_t subtype; const char *name; } VMTargetDe
         w = MAX(w / 2, 1);
         h = MAX(h / 2, 1);
     }
-    if (deallocator) deallocator(bytes, length);
+    if (t) [t setNoCopyBytes:bytes length:length deallocator:deallocator];
+    else if (deallocator) deallocator(bytes, length);
     return t;
 }
 - (MTLSizeAndAlign)heapBufferSizeAndAlignWithLength:(NSUInteger)length options:(MTLResourceOptions)options {

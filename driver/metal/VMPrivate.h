@@ -208,6 +208,8 @@ void TSMtlInstallLayerTuning(void);
                          plane:(NSUInteger)plane;
 - (instancetype)initWithDevice:(VMDevice *)device descriptor:(MTLTextureDescriptor *)desc buffer:(VMBuffer *)buffer
                         offset:(NSUInteger)offset bytesPerRow:(NSUInteger)bytesPerRow;
+// newTextureWithBytesNoCopy: the caller's memory, handed to its deallocator when the texture is released
+- (void)setNoCopyBytes:(void *)bytes length:(NSUInteger)length deallocator:(void (^)(void *, NSUInteger))deallocator;
 @property (readonly) vmg_texture *vmg;
 @end
 

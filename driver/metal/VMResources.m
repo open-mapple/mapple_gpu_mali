@@ -196,6 +196,9 @@ static vmg_texture_desc VMTextureDesc(MTLTextureDescriptor *d) {
     NSUInteger _bufferOffset, _bufferBytesPerRow;
     NSUInteger _parentLevel, _parentSlice;
     MTLTextureSwizzleChannels _swizzle;
+    void *_noCopyBytes;
+    NSUInteger _noCopyLength;
+    void (^_noCopyDeallocator)(void *, NSUInteger);
 }
 VM_CATCH_ALL(VMTexture)
 
@@ -289,11 +292,18 @@ VM_CATCH_ALL(VMTexture)
             _surface ? [NSString stringWithFormat:@" IOSurface %u", IOSurfaceGetID(_surface)] : @"", self.label ?: @""];
 }
 
+- (void)setNoCopyBytes:(void *)bytes length:(NSUInteger)length deallocator:(void (^)(void *, NSUInteger))deallocator {
+    _noCopyBytes = bytes;
+    _noCopyLength = length;
+    _noCopyDeallocator = [deallocator copy];
+}
+
 - (void)dealloc {
     vmg_texture *t = _vmg;
     VMDevice *d = _strongDevice;
     if (t && d) [d gpuAsync:^{ vmg_texture_release(d.vmg, t); }];
     if (_surface) CFRelease(_surface);
+    if (_noCopyDeallocator) _noCopyDeallocator(_noCopyBytes, _noCopyLength);
 }
 
 - (id<MTLDevice>)device { return _device; }
