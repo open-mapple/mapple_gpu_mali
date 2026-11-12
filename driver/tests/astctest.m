@@ -2,7 +2,9 @@
 // files, *.atx: chunks of u32 length, 4-byte tag, data; the 4x4 blocks row by row in the "astc" chunk after its size). The blocks go in
 // by replaceRegion, by a blit from a buffer and by newTextureWithBytesNoCopy (CoreAnimation's way for these images);
 // each texture is drawn (sampled) into a BGRA target the same size and read back.
+// The no-copy texture must hand its memory to the deallocator when it is released, not before.
 // Usage: astctest FILE.atx [OUT.ppm]   (the first drawing is written as a PPM, for a look on the Mac)
+// On the Mac against this driver (llvmpipe): built with -DVMG_TEST_DYLIB and linked to libMappleMetal.dylib.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
@@ -63,7 +65,12 @@ int main(int argc, char **argv) { @autoreleasepool {
     if (!blocks) { printf("%s: no astc chunk with %zu bytes\n", argv[1], need); return 1; }
     printf("%s: ASTC 4x4 %ux%u, %zu bytes of blocks at 0x%zx\n", argv[1], w, h, need, (size_t)(blocks - f));
 
+#ifdef VMG_TEST_DYLIB
+    extern id<MTLDevice> TSMtlCreateDevice(void);
+    id<MTLDevice> dev = TSMtlCreateDevice();
+#else
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+#endif
     if (!dev) { printf("no Metal device\n"); return 1; }
     printf("device %s; Apple families:", dev.name.UTF8String);
     for (int i = 1; i <= 9; i++)
@@ -87,7 +94,8 @@ int main(int argc, char **argv) { @autoreleasepool {
     uint8_t *px = malloc((size_t)w * h * 4);
     int fails = 0;
 
-    for (int way = 0; way < 3; way++) {
+    __block int freed = 0;
+    for (int way = 0; way < 3; way++) { @autoreleasepool {
         MTLTextureDescriptor *ad = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatASTC_4x4_LDR width:w height:h mipmapped:NO];
         ad.usage = MTLTextureUsageShaderRead;
         ad.storageMode = way == 0 ? MTLStorageModeShared : MTLStorageModePrivate;
@@ -105,7 +113,7 @@ int main(int argc, char **argv) { @autoreleasepool {
             continue;
         }
         id<MTLTexture> astc = way == 2 ? [(id)dev newTextureWithBytesNoCopy:nocopy length:need descriptor:ad
-                                                               deallocator:^(void *p, NSUInteger l) { (void)l; free(p); }]
+                                                               deallocator:^(void *p, NSUInteger l) { (void)l; free(p); freed++; }]
                                        : [dev newTextureWithDescriptor:ad];
         const char *what = way == 0 ? "replaceRegion, shared" : way == 1 ? "blit from a buffer, private"
                                                                        : "newTextureWithBytesNoCopy";
@@ -143,6 +151,14 @@ int main(int argc, char **argv) { @autoreleasepool {
             fclose(o);
             printf("written %s\n", argv[2]);
         }
+        if (way == 2) {
+            if (freed) { printf("deallocator called while the texture lives\n"); fails++; }
+            astc = nil;
+        }
+    }}
+    if ([(id)dev respondsToSelector:@selector(newTextureWithBytesNoCopy:length:descriptor:deallocator:)]) {
+        printf("deallocator after the texture's release: %s\n", freed == 1 ? "called once" : freed ? "called more than once" : "NOT called");
+        if (freed != 1) fails++;
     }
     free(px);
     return fails != 0;
