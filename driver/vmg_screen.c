@@ -311,6 +311,18 @@ const char *vmg_driver_build_id(void) { return g_cache_id; }
 static uint32_t g_gpu_product_id;
 uint32_t vmg_gpu_product_id(void) { return g_gpu_product_id; }
 
+// Mesa's BO cache (mesa/patches/0007): emptied at memory pressure (VMDevice.m), measured for the statistics page.
+void panfrost_screen_bo_cache_empty(struct pipe_screen *screen);
+size_t panfrost_screen_bo_cache_bytes(struct pipe_screen *screen);
+static vmg_device *g_bo_cache_dev;              // the process's Panfrost device (one per process)
+uint64_t vmg_bo_cache_bytes(void) { return g_bo_cache_dev ? panfrost_screen_bo_cache_bytes(g_bo_cache_dev->screen) : 0; }
+uint64_t vmg_bo_cache_empty(void)
+{
+    uint64_t was = vmg_bo_cache_bytes();
+    if (g_bo_cache_dev) panfrost_screen_bo_cache_empty(g_bo_cache_dev->screen);
+    return was;
+}
+
 vmg_device *vmg_device_create(const char *which, char *error, size_t error_size)
 {
     load_env_file();
@@ -342,6 +354,7 @@ vmg_device *vmg_device_create(const char *which, char *error, size_t error_size)
         struct pipe_screen_config config = { .driver_name_is_inferred = false, .options = &options, .options_info = &info };
         dev->screen = panfrost_create_screen(dev->fd, &config, NULL);
         dev->panfrost = true;
+        g_bo_cache_dev = dev;
         // Panfrost names the GPU from its product id: Mali-G57 = 0x9093 (the only one the ISA compiler targets)
         if (dev->screen && strstr(dev->screen->get_name(dev->screen), "Mali-G57")) g_gpu_product_id = 0x9093;
 #if VMG_HAVE_LLVMPIPE
@@ -431,6 +444,7 @@ vmg_device *vmg_device_create(const char *which, char *error, size_t error_size)
 void vmg_device_destroy(vmg_device *dev)
 {
     if (!dev) return;
+    if (g_bo_cache_dev == dev) g_bo_cache_dev = NULL;
     hash_table_foreach(dev->raster_cache, he) dev->pipe->delete_rasterizer_state(dev->pipe, he->data), free((void *)he->key);
     _mesa_hash_table_destroy(dev->raster_cache, NULL);
     if (dev->sampler_default) dev->pipe->delete_sampler_state(dev->pipe, dev->sampler_default);

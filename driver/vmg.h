@@ -165,6 +165,9 @@ void vmg_bounds_counters(uint64_t *draws, uint64_t *kpx, uint64_t *clears);
 // 0 before a device exists or on other drivers).
 void vmg_isa_counters(uint64_t *functions, uint64_t *fallbacks, uint64_t *compile_us, char *last_fallback, size_t size);
 uint32_t vmg_gpu_product_id(void);
+// Mesa's BO cache: its size, and emptying it (returns what it held). 0 without a Panfrost device.
+uint64_t vmg_bo_cache_bytes(void);
+uint64_t vmg_bo_cache_empty(void);
 char *vmg_air_to_nir_text(vmg_device *dev, const vmg_air_input *in, char **error);
 
 typedef struct {

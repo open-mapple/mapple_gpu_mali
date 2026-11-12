@@ -9,7 +9,7 @@
 
 #define VMG_SHM_STATS_DIR     "/private/var/tmp/vmg-stats"
 #define VMG_SHM_STATS_MAGIC   0x534d4756u   // 'VGMS'
-#define VMG_SHM_STATS_VERSION 3
+#define VMG_SHM_STATS_VERSION 4
 #define VMG_SHM_STATS_HAS_ISA 1
 #define VMG_SHM_STATS_CALLS   32            // >= VGPU_SEL_COUNT (uapi selectors, by index)
 
@@ -51,6 +51,12 @@ typedef struct {
     uint64_t bounded_draws;          // draws given a scissor from their vertices
     uint64_t bounded_kpx;            // thousands of pixels those scissors took off the draws' areas
     uint64_t clear_draws;            // first draws of a pass turned into a clear
+
+    // Version 4: GPU memory. Always the last three fields, so readers without this header (mstat) take them from the
+    // end of `size`.
+    uint64_t bo_cache_bytes;         // Mesa's BO cache (freed buffers kept for reuse)
+    uint64_t pressure_events;        // memory pressure notifications that emptied it (kern.mapple_gpu_pressure)
+    uint64_t pressure_freed_bytes;   // what those gave back
 } vmg_shm_stats;
 
 #endif

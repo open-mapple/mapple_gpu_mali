@@ -7,6 +7,7 @@
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <TargetConditionals.h>
+#import <sys/sysctl.h>
 #import "../../vgpu/iokit_compat.h"   // io_service_t, IORegistryEntryGetRegistryEntryID (no IOKit headers in the iOS SDK)
 
 // Implemented by _MTLDevice (checked at runtime), not declared in its header.
@@ -92,11 +93,36 @@ static const void *const VMGPUQueueKey = &VMGPUQueueKey;
     [self initGPUFamilySupport];
     TSMtlInstallLayerTuning();
     VMShmStatsInit();
+    VMWatchMemoryPressure(_gpuQueue);
     TSMtlLog(@"device ready: %@ (%s)", _name, info->driver);
     return self;
 }
 
 // iOS: Metal.framework (_MTLRegisterDevices) with the IOAcceleratorES service.
+_Atomic uint64_t gVMPressureEvents, gVMPressureFreed;
+
+// A memory pressure notification gives Mesa's BO cache back to the system, unless kern.mapple_gpu_pressure is 0. GPU
+// memory counts in this process's footprint (the kernel's mp_gpu_footprint), so this is what memorystatus asks for.
+static void VMWatchMemoryPressure(dispatch_queue_t queue)
+{
+    static dispatch_source_t source;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        source = dispatch_source_create(DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+                                        DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, queue);
+        if (!source) return;
+        dispatch_source_set_event_handler(source, ^{
+            int on = 1;
+            size_t len = sizeof on;
+            if (sysctlbyname("kern.mapple_gpu_pressure", &on, &len, NULL, 0) != 0) on = 1;
+            if (!on) return;
+            atomic_fetch_add_explicit(&gVMPressureEvents, 1, memory_order_relaxed);
+            atomic_fetch_add_explicit(&gVMPressureFreed, vmg_bo_cache_empty(), memory_order_relaxed);
+        });
+        dispatch_resume(source);
+    });
+}
+
 - (instancetype)initWithAcceleratorPort:(io_service_t)port {
     if ((self = [self initWithDriver:NULL])) _accelerator = port;
     return self;

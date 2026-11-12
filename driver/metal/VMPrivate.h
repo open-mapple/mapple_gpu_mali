@@ -279,3 +279,6 @@ NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 id<MTLRenderCommandEncoder> VMNewRenderEncoder(VMCommandBuffer *cb, MTLRenderPassDescriptor *desc);
 id<MTLComputeCommandEncoder> VMNewComputeEncoder(VMCommandBuffer *cb);
 id<MTLBlitCommandEncoder> VMNewBlitEncoder(VMCommandBuffer *cb);
+
+// Memory pressure notifications that emptied Mesa's BO cache, and what they gave back (VMDevice.m, statistics page).
+extern _Atomic uint64_t gVMPressureEvents, gVMPressureFreed;
