@@ -1,6 +1,7 @@
 // Mapple GPU: kernel simulated in-process (VGPU_BACKEND=mock), for tests on the Mac without the phone.
 // BOs are anonymous memory with a GPU VA from the Panfrost range [32 MiB, 4 GiB) (first fit, like the kernel); each
-// vgpu_mmap returns a new shared alias of the memory (mach_vm_remap), so munmap of a CPU mapping never frees the BO. Submits complete
+// vgpu_mmap returns a new shared alias of the memory (mach_vm_remap), so munmap of a CPU mapping never frees the BO; as
+// with IOKit, a mapping can only be unmapped while its BO is open (vgpu_mock_mappings counts the live ones). Submits complete
 // immediately: out_sync is signalled, nothing runs. GET_PARAM answers as a Mali-G57 MC2 (VGPU_MOCK_GPU_ID overrides
 // the product id, e.g. 9093).
 #include "vgpu.h"
@@ -25,7 +26,10 @@ typedef struct {
     uint32_t flags, madv;
     bool imported;
     IOSurfaceRef surface;   // imported: kept alive while the BO exists
+    uint64_t gen;           // which BO this handle names (handles are reused)
 } MockBO;
+
+typedef struct { void *addr; size_t size; uint32_t handle; uint64_t gen; } MockMap;
 
 typedef struct {
     pthread_mutex_t lock;
@@ -34,7 +38,9 @@ typedef struct {
     uint8_t *syncobj;     // index = handle: 0 free, 1 unsignalled, 2 signalled
     uint32_t nextBO, nextSync;
     struct vgpu_completion *completion;   // K0h page: jobs complete at submit here, so completed = submitted
-    uint64_t seq;
+    uint64_t seq, gen;
+    MockMap *maps;
+    size_t mapCount, mapCap;
 } MockConn;
 
 // GPU VA allocator: first fit over the BOs sorted by address (linear scan; tests have few BOs).
@@ -51,6 +57,9 @@ static uint64_t va_alloc(MockConn *c, size_t size)
     }
     return start + size <= VGPU_VA_END ? start : 0;
 }
+
+static size_t g_maps_live;
+size_t vgpu_mock_mappings(void) { return __atomic_load_n(&g_maps_live, __ATOMIC_RELAXED); }
 
 static vgpu_mock_submit_hook g_hook;
 static void *g_hookCtx;
@@ -208,7 +217,7 @@ static int mock_ioctl(void *conn, enum vgpu_selector sel, void *arg, size_t size
         if (!va) { ret = -ENOSPC; break; }
         void *p = mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
         if (p == MAP_FAILED) { ret = -ENOMEM; break; }
-        c->bos[h] = (MockBO){ p, va, 0, sz, a->flags, VGPU_MADV_WILLNEED, false, NULL };
+        c->bos[h] = (MockBO){ p, va, 0, sz, a->flags, VGPU_MADV_WILLNEED, false, NULL, ++c->gen };
         c->nextBO = h + 1;
         a->handle = h;
         a->offset = va;
@@ -315,7 +324,7 @@ static int mock_ioctl(void *conn, enum vgpu_selector sel, void *arg, size_t size
         size_t vsize = ((size_t)(base + total - start) + pg - 1) & ~(pg - 1);
         uint64_t va = va_alloc(c, vsize);
         if (!va) { CFRelease(s); ret = -ENOSPC; break; }
-        c->bos[h] = (MockBO){ start, va, (plane - start), vsize, 0, VGPU_MADV_WILLNEED, true, s };
+        c->bos[h] = (MockBO){ start, va, (plane - start), vsize, 0, VGPU_MADV_WILLNEED, true, s, ++c->gen };
         c->nextBO = h + 1;
         a->handle = h;
         a->offset = va + (uint64_t)(plane - start);
@@ -352,7 +361,7 @@ static int mock_ioctl(void *conn, enum vgpu_selector sel, void *arg, size_t size
         while (h < MAX_HANDLES && c->bos[h].addr) h++;
         uint64_t va = h < MAX_HANDLES ? va_alloc(c, a->size) : 0;
         if (!va) { ret = -ENOSPC; break; }
-        c->bos[h] = (MockBO){ (void *)(uintptr_t)a->addr, va, 0, a->size, 0, VGPU_MADV_WILLNEED, true, NULL };
+        c->bos[h] = (MockBO){ (void *)(uintptr_t)a->addr, va, 0, a->size, 0, VGPU_MADV_WILLNEED, true, NULL, ++c->gen };
         c->nextBO = h + 1;
         a->handle = h;
         a->offset = va;
@@ -377,6 +386,7 @@ static void *mock_mmap(void *conn, uint64_t token, size_t size)
     MockBO *b = bo(c, (uint32_t)token);
     void *src = b ? b->addr : NULL;
     size_t bsize = b ? b->size : 0;
+    uint64_t gen = b ? b->gen : 0;
     pthread_mutex_unlock(&c->lock);
     if (!src || size > bsize) { errno = EINVAL; return NULL; }
     vm_address_t dst = 0;   // vm_remap: mach_vm_remap is not in the iOS SDK
@@ -384,13 +394,37 @@ static void *mock_mmap(void *conn, uint64_t token, size_t size)
     kern_return_t kr = vm_remap(mach_task_self(), &dst, size, 0, VM_FLAGS_ANYWHERE, mach_task_self(),
                                 (vm_address_t)(uintptr_t)src, FALSE, &cur, &max, VM_INHERIT_SHARE);
     if (kr != KERN_SUCCESS) { errno = ENOMEM; return NULL; }
+    pthread_mutex_lock(&c->lock);
+    if (c->mapCount == c->mapCap) {
+        c->mapCap = c->mapCap ? c->mapCap * 2 : 64;
+        c->maps = realloc(c->maps, c->mapCap * sizeof *c->maps);
+    }
+    c->maps[c->mapCount++] = (MockMap){ (void *)(uintptr_t)dst, size, (uint32_t)token, gen };
+    __atomic_add_fetch(&g_maps_live, 1, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&c->lock);
     return (void *)(uintptr_t)dst;
 }
 
+// IOConnectUnmapMemory64 finds the mapping through the BO's handle: once the BO is closed (or the handle names
+// another BO), the unmap fails and the mapping stays.
 static int mock_munmap(void *conn, void *addr, size_t size)
 {
-    if (addr == ((MockConn *)conn)->completion) return 0;
-    return munmap(addr, size) ? -errno : 0;
+    MockConn *c = conn;
+    if (addr == c->completion) return 0;
+    pthread_mutex_lock(&c->lock);
+    for (size_t i = 0; i < c->mapCount; i++) {
+        MockMap m = c->maps[i];
+        if (m.addr != addr) continue;
+        if (!c->bos[m.handle].addr || c->bos[m.handle].gen != m.gen) { pthread_mutex_unlock(&c->lock); return -EINVAL; }
+        c->maps[i] = c->maps[--c->mapCount];
+        __atomic_sub_fetch(&g_maps_live, 1, __ATOMIC_RELAXED);
+        pthread_mutex_unlock(&c->lock);
+        return munmap(addr, m.size) ? -errno : 0;
+    }
+    pthread_mutex_unlock(&c->lock);
+    return -EINVAL;
 }
+
+
 
 const struct vgpu_backend vgpu_backend_mock = { "mock", mock_open, mock_close, mock_ioctl, mock_mmap, mock_munmap };

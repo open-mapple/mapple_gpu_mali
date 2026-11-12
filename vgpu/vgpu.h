@@ -52,6 +52,7 @@ extern const struct vgpu_backend vgpu_backend_mock;
 // Mesa's pandecode. NULL = none.
 typedef void (*vgpu_mock_submit_hook)(const struct vgpu_submit *submit, void *ctx);
 void vgpu_mock_set_submit_hook(vgpu_mock_submit_hook hook, void *ctx);
+size_t vgpu_mock_mappings(void);   // CPU mappings still in place (tests: back to the baseline after closes)
 
 #ifdef __cplusplus
 }
