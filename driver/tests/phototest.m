@@ -1,6 +1,7 @@
 // phototest: one image through each stage Photos' thumbnails and the photo poster go through, each output checked for
 // all-zero pixels: ImageIO decode, CGImageSourceCreateThumbnailAtIndex, IOSurfaceAccelerator (the scaler service,
-// mp_scaler), a VideoToolbox pixel transfer, CoreImage on Metal and with the software renderer.
+// mp_scaler), a VideoToolbox pixel transfer, CoreImage on Metal and with the software renderer; each stage's time
+// (from its call to its pixels read back).
 // Usage: phototest IMAGE [OUTDIR]   (OUTDIR: each stage's output as a PPM)
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
@@ -14,6 +15,8 @@
 
 static const char *outdir;
 static int zeros;
+static double started;      // the stage's start (CFAbsoluteTime)
+#define STAGE() (started = CFAbsoluteTimeGetCurrent())
 
 // BGRA or RGBA 8888 pixels: share of pixels with any colour, mean, and a PPM if asked
 static void report(const char *stage, const uint8_t *px, size_t w, size_t h, size_t bpr, BOOL bgra) {
@@ -24,9 +27,9 @@ static void report(const char *stage, const uint8_t *px, size_t w, size_t h, siz
             if (p[0] | p[1] | p[2]) lit++;
             sum += p[0] + p[1] + p[2];
         }
-    double share = w && h ? 100.0 * lit / (double)(w * h) : 0;
-    printf("%-34s %4zux%-4zu %5.1f%% of pixels not black, mean %.0f%s\n", stage, w, h, share,
-           w && h ? sum / (3.0 * w * h) : 0, lit ? "" : "   ALL ZERO");
+    double share = w && h ? 100.0 * lit / (double)(w * h) : 0, ms = 1000 * (CFAbsoluteTimeGetCurrent() - started);
+    printf("%-34s %4zux%-4zu %5.1f%% of pixels not black, mean %3.0f, %7.1f ms%s\n", stage, w, h, share,
+           w && h ? sum / (3.0 * w * h) : 0, ms, lit ? "" : "   ALL ZERO");
     zeros += !lit;
     if (outdir && w && h) {
         char path[1024];
@@ -78,12 +81,14 @@ int main(int argc, char **argv) { @autoreleasepool {
     printf("%s: %s\n", argv[1], [(__bridge NSString *)CGImageSourceGetType(src) UTF8String]);
 
     // 1. decode
+    STAGE();
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, NULL);
     report_cgimage("1 ImageIO decode", img);
 
     // 2. ImageIO thumbnail (what assetsd's thumbnails start from)
     NSDictionary *to = @{ (id)kCGImageSourceCreateThumbnailFromImageAlways: @YES, (id)kCGImageSourceThumbnailMaxPixelSize: @256,
                           (id)kCGImageSourceCreateThumbnailWithTransform: @YES };
+    STAGE();
     CGImageRef th = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)to);
     report_cgimage("2 ImageIO thumbnail", th);
 
@@ -111,6 +116,7 @@ int main(int argc, char **argv) { @autoreleasepool {
     if (!acc) {
         printf("%-34s no accelerator (create 0x%x; scaler off: no mp_scaler)\n", "3 IOSurfaceAccelerator", r);
     } else if (in) {
+        STAGE();
         r = transfer(acc, in, out, NULL, NULL, NULL, NULL, NULL);
         if (r) printf("%-34s transfer 0x%x   ALL ZERO\n", "3 IOSurfaceAccelerator", r), zeros++;
         else report_surface("3 IOSurfaceAccelerator", out);
@@ -123,6 +129,7 @@ int main(int argc, char **argv) { @autoreleasepool {
         IOSurfaceRef out2 = bgra_surface(MAX(w / 4, 1), MAX(h / 4, 1));
         CVPixelBufferCreateWithIOSurface(NULL, out2, NULL, &pout);
         VTPixelTransferSessionRef vt = NULL;
+        STAGE();
         OSStatus st = VTPixelTransferSessionCreate(NULL, &vt);
         if (!st) st = VTPixelTransferSessionTransferImage(vt, pin, pout);
         if (st) printf("%-34s status %d   ALL ZERO\n", "4 VideoToolbox transfer", (int)st), zeros++;
@@ -143,8 +150,10 @@ int main(int argc, char **argv) { @autoreleasepool {
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
         CIContext *metal = dev ? [CIContext contextWithMTLDevice:dev] : nil;
         CIContext *soft = [CIContext contextWithOptions:@{ kCIContextUseSoftwareRenderer: @YES }];
+        STAGE();
         CGImageRef a = metal ? [metal createCGImage:scaled fromRect:scaled.extent] : NULL;
         report_cgimage(metal ? "5 CoreImage Metal" : "5 CoreImage Metal (no device)", a);
+        STAGE();
         CGImageRef b = [soft createCGImage:scaled fromRect:scaled.extent];
         report_cgimage("6 CoreImage software", b);
         if (a) CGImageRelease(a);
