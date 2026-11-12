@@ -1,0 +1,33 @@
+Panfrost: a fragment shader that reads its render targets (framebuffer fetch) marks them read, so each
+batch of a split pass preloads them, also when the draw does not write them (off: PAN_NO_FBFETCH_PRELOAD).
+
+--- a/src/gallium/drivers/panfrost/pan_cmdstream.c
++++ b/src/gallium/drivers/panfrost/pan_cmdstream.c
+@@ -29,6 +29,7 @@
+ #include "pan_blend.h"
+ #include "pan_bo.h"
+ #include "pan_buffer.h"
++#include <unistd.h>
+ #include "pan_cmdstream.h"
+ #include "pan_context.h"
+ #include "pan_csf.h"
+@@ -3247,6 +3248,19 @@
+ 
+    if (dirty & PAN_DIRTY_ZS)
+       panfrost_set_batch_masks_zs(batch);
++
++   /* A framebuffer fetch reads its render targets: every batch of the pass
++    * must preload them, also when this draw does not write them (a pass split
++    * by a barrier would otherwise start them from the clear colour).
++    * /private/var/tmp/pan-no-fbfetch-preload or PAN_NO_FBFETCH_PRELOAD: off. */
++   static int fbfetch_preload = -1;
++   if (fbfetch_preload < 0)
++      fbfetch_preload = !getenv("PAN_NO_FBFETCH_PRELOAD") &&
++                        access("/private/var/tmp/pan-no-fbfetch-preload", F_OK) != 0;
++   struct panfrost_compiled_shader *fs = ctx->prog[MESA_SHADER_FRAGMENT];
++   if (fbfetch_preload && fs && fs->info.fs.outputs_read)
++      batch->read |= ((fs->info.fs.outputs_read >> FRAG_RESULT_DATA0) &
++                      BITFIELD_MASK(batch->key.nr_cbufs)) * PIPE_CLEAR_COLOR0;
+ 
+ #if PAN_ARCH >= 9
+    if ((dirty & (PAN_DIRTY_ZS | PAN_DIRTY_RASTERIZER)) ||
