@@ -28,7 +28,7 @@ enum { VM_PF_D24S8 = 255, VM_PF_X24S8 = 262 };
 @end
 
 @interface _MTLCommandQueue : _MTLObjectWithLabel
-- (instancetype)initWithDevice:(id)device descriptor:(MTLCommandQueueDescriptor *)descriptor;
+- (instancetype)initWithDevice:(id)device descriptor:(id)descriptor;
 - (void)commandBufferDidComplete:(id)cb startTime:(uint64_t)start completionTime:(uint64_t)end error:(NSError *)error;
 @end
 

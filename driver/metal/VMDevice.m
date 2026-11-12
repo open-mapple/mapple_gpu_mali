@@ -423,13 +423,14 @@ static BOOL VMStrictFailure(NSString *failure, NSError **error) {
 
 #pragma mark Commands
 
-- (id<MTLCommandQueue>)newCommandQueueWithDescriptor:(MTLCommandQueueDescriptor *)desc {
+/* MTLCommandQueueDescriptor is iOS 18 API: not in iOS 16's Metal (nor in an iOS 17 SDK), so looked up at run time. */
+- (id<MTLCommandQueue>)newCommandQueueWithDescriptor:(id)desc {
     return [[VMCommandQueue alloc] initWithDevice:self descriptor:desc];
 }
-- (id<MTLCommandQueue>)newCommandQueue { return [self newCommandQueueWithDescriptor:[MTLCommandQueueDescriptor new]]; }
+- (id<MTLCommandQueue>)newCommandQueue { return [self newCommandQueueWithDescriptor:[NSClassFromString(@"MTLCommandQueueDescriptor") new]]; }
 - (id<MTLCommandQueue>)newCommandQueueWithMaxCommandBufferCount:(NSUInteger)count {
-    MTLCommandQueueDescriptor *desc = [MTLCommandQueueDescriptor new];
-    desc.maxCommandBufferCount = count;
+    id desc = [NSClassFromString(@"MTLCommandQueueDescriptor") new];
+    [desc setValue:@(count) forKey:@"maxCommandBufferCount"];
     return [self newCommandQueueWithDescriptor:desc];
 }
 @end

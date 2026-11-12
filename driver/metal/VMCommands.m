@@ -441,7 +441,7 @@ static BOOL VMTraceEvents(void) {
 }
 VM_CATCH_ALL(VMCommandQueue)
 
-- (instancetype)initWithDevice:(id)device descriptor:(MTLCommandQueueDescriptor *)descriptor {
+- (instancetype)initWithDevice:(id)device descriptor:(id)descriptor {
     if ((self = [super initWithDevice:device descriptor:descriptor])) _device = device;
     return self;
 }
