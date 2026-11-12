@@ -66,7 +66,8 @@ VM_CATCH_ALL(VMRenderEncoder)
         }
         if (atomic_fetch_add(&lines, 1) < 64) fprintf(stderr, "vmg: pass %p:%s\n", (__bridge void *)self, a.UTF8String);
     }
-    if (VMCapTraceOn() && desc.colorAttachments[1].texture) _cap = [[VMPassCapture alloc] initWithPass:desc];
+    if (VMCapTraceOn() && desc.colorAttachments[1].texture && access("/private/var/tmp/vmg-capture", F_OK) == 0)
+        _cap = [[VMPassCapture alloc] initWithPass:desc];   // only while the trigger file is there
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {
         MTLRenderPassColorAttachmentDescriptor *c = desc.colorAttachments[i];
         if (!c.texture) continue;

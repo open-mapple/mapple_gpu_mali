@@ -1,7 +1,7 @@
-// Pass capture (with the capability trace on): a render pass with two or more colour attachments that draws a
+// Pass capture (with the capability trace on, while /private/var/tmp/vmg-capture exists): a render pass with two or more colour attachments that draws a
 // compressed texture is written out whole, for tests/cafetch-replay to rebuild: the attachments, each pipeline's
 // descriptor and function constants, every binding and draw in order, the bytes of the buffers each draw has bound
-// and of the compressed textures. At most three passes per process, to VMG_SHM_STATS_DIR/pass-<pid>-<n>/
+// and of the compressed textures. At most six passes per process, to VMG_SHM_STATS_DIR/pass-<pid>-<n>/
 // (script.txt, b<n>.bin).
 #import "VMPrivate.h"
 #import <objc/runtime.h>
@@ -136,7 +136,7 @@ void VMCaptureSetConstants(id function, NSString *line) {
     static _Atomic int written;
     if (!_compressed) return;
     int n = atomic_fetch_add(&written, 1);
-    if (n >= 3) return;
+    if (n >= 6) return;
     NSString *dir = [NSString stringWithFormat:@"%s/pass-%d-%d", VMG_SHM_STATS_DIR, getpid(), n];
     mkdir(VMG_SHM_STATS_DIR, 0777);
     mkdir(dir.UTF8String, 0777);
