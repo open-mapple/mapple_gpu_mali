@@ -129,6 +129,38 @@ int main(int argc, char **argv) { @autoreleasepool {
     CGImageRef th = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)to);
     report_cgimage("2 ImageIO thumbnail", th);
 
+    // 2c. the options assetsd's thumbnail job uses (its log, run 18), with and without ForceHighSpeedDecode
+    for (int fast = 1; fast >= 0; fast--) {
+        NSMutableDictionary *ao = [@{ (id)kCGImageSourceCreateThumbnailFromImageIfAbsent: @YES,
+                                      (id)kCGImageSourceCreateThumbnailWithTransform: @YES,
+                                      @"kCGImageSourceKeepOriginalProfile": @YES, (id)kCGImageSourceThumbnailMaxPixelSize: @0 } mutableCopy];
+        if (fast) ao[@"ForceHighSpeedDecode"] = @YES;
+        STAGE();
+        CGImageRef at = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)ao);
+        report_cgimage(fast ? "2c assetsd's options" : "2d same, no ForceHighSpeedDecode", at);
+        if (at) CGImageRelease(at);
+    }
+
+    // 2e. which of those options makes it fail: one changed at a time
+    {
+        static const struct { int size, keep, always, transform; const char *name; } v[] = {
+            { 0, 0, 0, 1, "2e max 0, no keep-profile" }, { 0, 1, 1, 1, "2e max 0, from-image always" },
+            { 2436, 1, 0, 1, "2e max 2436, keep-profile" }, { 1024, 1, 0, 1, "2e max 1024, keep-profile" },
+            { 0, 0, 0, 0, "2e max 0 only" }, { 256, 0, 0, 1, "2e max 256, if-absent" },
+        };
+        for (unsigned k = 0; k < sizeof v / sizeof *v; k++) {
+            NSMutableDictionary *ao = [NSMutableDictionary dictionary];
+            ao[(id)(v[k].always ? kCGImageSourceCreateThumbnailFromImageAlways : kCGImageSourceCreateThumbnailFromImageIfAbsent)] = @YES;
+            if (v[k].transform) ao[(id)kCGImageSourceCreateThumbnailWithTransform] = @YES;
+            if (v[k].keep) ao[@"kCGImageSourceKeepOriginalProfile"] = @YES;
+            ao[(id)kCGImageSourceThumbnailMaxPixelSize] = @(v[k].size);
+            STAGE();
+            CGImageRef at = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)ao);
+            report_cgimage(v[k].name, at);
+            if (at) CGImageRelease(at);
+        }
+    }
+
     // the decoded image in a BGRA IOSurface, for the scaler and VideoToolbox stages
     size_t w = img ? CGImageGetWidth(img) : 0, h = img ? CGImageGetHeight(img) : 0;
     IOSurfaceRef in = w ? bgra_surface(w, h) : NULL, out = w ? bgra_surface(MAX(w / 4, 1), MAX(h / 4, 1)) : NULL;
