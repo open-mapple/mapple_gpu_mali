@@ -104,6 +104,8 @@ int main(int argc, char **argv) { @autoreleasepool {
         CGContextRelease(c);
         CGColorSpaceRelease(cs);
         IOSurfaceUnlock(in, 0, NULL);
+        STAGE();
+        report_surface("2b IOSurface input as filled", in);
     }
 
     // 3. IOSurfaceAccelerator (AppleM2ScalerCSCDriver: our MTKScaler, CPU or MDP backend)
@@ -138,6 +140,57 @@ int main(int argc, char **argv) { @autoreleasepool {
         if (pin) CVPixelBufferRelease(pin);
         if (pout) CVPixelBufferRelease(pout);
         CFRelease(out2);
+    }
+
+    // 4b. VideoToolbox on plain (malloc) pixel buffers, no IOSurface
+    if (img) {
+        CVPixelBufferRef pin = NULL, pout = NULL;
+        CVPixelBufferCreate(NULL, w, h, kCVPixelFormatType_32BGRA, NULL, &pin);
+        CVPixelBufferCreate(NULL, MAX(w / 4, 1), MAX(h / 4, 1), kCVPixelFormatType_32BGRA, NULL, &pout);
+        CVPixelBufferLockBaseAddress(pin, 0);
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef c = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pin), w, h, 8, CVPixelBufferGetBytesPerRow(pin), cs,
+                                               kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+        CGContextDrawImage(c, CGRectMake(0, 0, w, h), img);
+        CGContextRelease(c);
+        CGColorSpaceRelease(cs);
+        CVPixelBufferUnlockBaseAddress(pin, 0);
+        VTPixelTransferSessionRef vt = NULL;
+        STAGE();
+        OSStatus st = VTPixelTransferSessionCreate(NULL, &vt);
+        if (!st) st = VTPixelTransferSessionTransferImage(vt, pin, pout);
+        if (st) printf("%-34s status %d   ALL ZERO\n", "4b VideoToolbox, plain buffers", (int)st), zeros++;
+        else {
+            CVPixelBufferLockBaseAddress(pout, kCVPixelBufferLock_ReadOnly);
+            report("4b VideoToolbox, plain buffers", CVPixelBufferGetBaseAddress(pout), CVPixelBufferGetWidth(pout),
+                   CVPixelBufferGetHeight(pout), CVPixelBufferGetBytesPerRow(pout), YES);
+            CVPixelBufferUnlockBaseAddress(pout, kCVPixelBufferLock_ReadOnly);
+        }
+        if (vt) { VTPixelTransferSessionInvalidate(vt); CFRelease(vt); }
+        CVPixelBufferRelease(pin);
+        CVPixelBufferRelease(pout);
+    }
+
+    // 5b. CoreImage in software from a plain bitmap image, rendered into a plain bitmap (no IOSurface)
+    if (img) {
+        uint8_t *px = calloc(w * h, 4);
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef c = CGBitmapContextCreate(px, w, h, 8, w * 4, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGContextDrawImage(c, CGRectMake(0, 0, w, h), img);
+        CGImageRef plain = CGBitmapContextCreateImage(c);
+        CIImage *ci = [CIImage imageWithCGImage:plain];
+        CIImage *scaled = [ci imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)];
+        CIContext *soft = [CIContext contextWithOptions:@{ kCIContextUseSoftwareRenderer: @YES }];
+        size_t ow = (size_t)scaled.extent.size.width, oh = (size_t)scaled.extent.size.height;
+        uint8_t *o = calloc(ow * oh, 4);
+        STAGE();
+        [soft render:scaled toBitmap:o rowBytes:ow * 4 bounds:scaled.extent format:kCIFormatRGBA8 colorSpace:cs];
+        report("5b CoreImage software, bitmaps", o, ow, oh, ow * 4, NO);
+        free(o);
+        CGImageRelease(plain);
+        CGContextRelease(c);
+        CGColorSpaceRelease(cs);
+        free(px);
     }
 
     // 5. and 6. CoreImage, a Lanczos scale to a quarter, rendered on Metal and in software
