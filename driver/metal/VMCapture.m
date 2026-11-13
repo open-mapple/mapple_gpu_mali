@@ -1,5 +1,5 @@
 // Pass capture (with the capability trace on, while /private/var/tmp/vmg-capture exists): a render pass with two or more colour attachments that draws a
-// compressed texture is written out whole, for tests/cafetch-replay to rebuild: the attachments, each pipeline's
+// compressed texture (any pass while /private/var/tmp/vmg-capture-all exists too) is written out whole, for tests/cafetch-replay to rebuild: the attachments, each pipeline's
 // descriptor and function constants, every binding and draw in order, the bytes of the buffers each draw has bound
 // and of the compressed textures. At most six passes per process, to VMG_SHM_STATS_DIR/pass-<pid>-<n>/
 // (script.txt, b<n>.bin).
@@ -21,11 +21,12 @@ void VMCaptureSetConstants(id function, NSString *line) {
     NSMutableDictionary<NSData *, NSNumber *> *_blobIndex;
     NSMutableSet *_pipes;
     struct { __unsafe_unretained id<MTLBuffer> buf; NSUInteger off; } _bufs[2][31];
-    BOOL _compressed;
+    BOOL _compressed, _all;
 }
 
-- (instancetype)initWithPass:(MTLRenderPassDescriptor *)desc {
+- (instancetype)initWithPass:(MTLRenderPassDescriptor *)desc all:(BOOL)all {
     if (!(self = [super init])) return nil;
+    _all = all;
     _script = [NSMutableString string];
     _blobs = [NSMutableArray array];
     _blobIndex = [NSMutableDictionary dictionary];
@@ -134,7 +135,7 @@ void VMCaptureSetConstants(id function, NSString *line) {
 
 - (void)finish {
     static _Atomic int written;
-    if (!_compressed) return;
+    if (!_compressed && !_all) return;
     int n = atomic_fetch_add(&written, 1);
     if (n >= 6) return;
     NSString *dir = [NSString stringWithFormat:@"%s/pass-%d-%d", VMG_SHM_STATS_DIR, getpid(), n];

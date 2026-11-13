@@ -77,8 +77,9 @@ VM_CATCH_ALL(VMRenderEncoder)
             if (o != t && o.vmg == t.vmg && t.memorylessShared) { [t unshareMemoryless]; break; }
         [seen addObject:t];
     }
-    if (VMCapTraceOn() && desc.colorAttachments[1].texture && access("/private/var/tmp/vmg-capture", F_OK) == 0)
-        _cap = [[VMPassCapture alloc] initWithPass:desc];   // only while the trigger file is there
+    BOOL all = access("/private/var/tmp/vmg-capture-all", F_OK) == 0;
+    if (VMCapTraceOn() && (desc.colorAttachments[1].texture || all) && access("/private/var/tmp/vmg-capture", F_OK) == 0)
+        _cap = [[VMPassCapture alloc] initWithPass:desc all:all];   // only while the trigger files are there
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {
         MTLRenderPassColorAttachmentDescriptor *c = desc.colorAttachments[i];
         if (!c.texture) continue;

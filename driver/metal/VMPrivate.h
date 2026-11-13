@@ -247,7 +247,7 @@ NSData *VMBitcodeOfFunction(id<MTLFunction> function);
 
 // Pass capture (VMCapture.m): the encoder reports a pass's state and draws to it; written out at endEncoding.
 @interface VMPassCapture : NSObject
-- (instancetype)initWithPass:(MTLRenderPassDescriptor *)desc;
+- (instancetype)initWithPass:(MTLRenderPassDescriptor *)desc all:(BOOL)all;
 - (void)pipeline:(VMRenderPipelineState *)p;
 - (void)buffer:(id<MTLBuffer>)b offset:(NSUInteger)o index:(NSUInteger)i stage:(int)s;
 - (void)offset:(NSUInteger)o index:(NSUInteger)i stage:(int)s;
