@@ -213,6 +213,8 @@ void TSMtlInstallLayerTuning(void);
 // a texture from newTextureWithBytesNoCopy, or a view of one: its uses are traced (VMTraceCompressed)
 @property (readonly) BOOL traced;
 @property (readonly) NSData *noCopyData;         // newTextureWithBytesNoCopy's bytes (no copy), else nil
+@property (readonly) BOOL memorylessShared;     // its backing is shared with other memoryless textures of its shape
+- (void)unshareMemoryless;                      // its own backing from now on (two attachments of one pass)
 @property (readonly) vmg_texture *vmg;
 @end
 

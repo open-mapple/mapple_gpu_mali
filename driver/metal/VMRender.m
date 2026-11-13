@@ -66,6 +66,17 @@ VM_CATCH_ALL(VMRenderEncoder)
         }
         if (atomic_fetch_add(&lines, 1) < 64) fprintf(stderr, "vmg: pass %p:%s\n", (__bridge void *)self, a.UTF8String);
     }
+    // two attachments on one shared memoryless backing would draw into each other: the later one gets its own
+    NSMutableArray<VMTexture *> *seen = [NSMutableArray array];
+    for (unsigned i = 0; i < VMG_MAX_COLOR + 2; i++) {
+        id<MTLTexture> tex = i < VMG_MAX_COLOR ? desc.colorAttachments[i].texture
+                           : i == VMG_MAX_COLOR ? desc.depthAttachment.texture : desc.stencilAttachment.texture;
+        if (![(id)tex isKindOfClass:[VMTexture class]]) continue;
+        VMTexture *t = (VMTexture *)tex;
+        for (VMTexture *o in seen)
+            if (o != t && o.vmg == t.vmg && t.memorylessShared) { [t unshareMemoryless]; break; }
+        [seen addObject:t];
+    }
     if (VMCapTraceOn() && desc.colorAttachments[1].texture && access("/private/var/tmp/vmg-capture", F_OK) == 0)
         _cap = [[VMPassCapture alloc] initWithPass:desc];   // only while the trigger file is there
     for (unsigned i = 0; i < VMG_MAX_COLOR; i++) {

@@ -32,6 +32,9 @@ static NSString *const kMSL = @
     "vertex VT fs_quad_uv(uint v [[vertex_id]]) { float2 p = float2((v << 1) & 2, v & 2); VT o; o.pos = float4(p * 2 - 1, 0, 1); o.uv = p; return o; }\n"
     "fragment Two putT(VT i [[stage_in]], texture2d<half> t [[texture(3)]]) { constexpr sampler s(filter::linear);\n"
     "  Two o; o.c0 = half4(0); o.c1 = t.sample(s, i.uv); return o; }\n"
+    "struct Three { half4 c0 [[color(0)]]; half4 c1 [[color(1)]]; half4 c2 [[color(2)]]; };\n"
+    "fragment Three put2() { Three o; o.c0 = half4(0); o.c1 = half4(0.2h, 0.4h, 0.6h, 1.0h); o.c2 = half4(0.6h, 0.2h, 0.4h, 1.0h); return o; }\n"
+    "fragment Three get2(half4 a [[color(1)]], half4 b [[color(2)]]) { Three o; o.c0 = (a + b) * 0.5h; o.c1 = a; o.c2 = b; return o; }\n"
     "fragment Two putA() { Two o; o.c0 = half4(0); o.c1 = half4(0.2h, 0.4h, 0.6h, 0.8h); return o; }\n"
     "fragment Two getA(half4 s [[color(1)]]) { Two o; o.c1 = s; o.c0 = half4(s.a, s.a, s.a, 1.0h); return o; }\n";
 
@@ -236,6 +239,56 @@ int main(int argc, char **argv) { @autoreleasepool {
         printf("%s S=1 CA memoryless %s writer, %s reader: rgb %3u %3u %3u (expected 77 128 179)\n", ok ? "ok  " : "FAIL",
                astc ? "ASTC-sampling" : "plain", blend ? "blending" : "plain", c[2], c[1], c[0]);
         fails += !ok;
+    }}
+    // two memoryless attachments of one shape in one pass (the driver shares memoryless backings by shape: the second
+    // must get its own): attachment 1 (0.2, 0.4, 0.6), attachment 2 (0.6, 0.2, 0.4), their mean into attachment 0
+    { @autoreleasepool {
+        MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                     width:w height:h mipmapped:NO];
+        td.usage = MTLTextureUsageRenderTarget;
+        td.storageMode = MTLStorageModeMemoryless;
+        id<MTLTexture> m1 = [dev newTextureWithDescriptor:td], m2 = [dev newTextureWithDescriptor:td];
+        td.storageMode = MTLStorageModeShared;
+        id<MTLTexture> out = [dev newTextureWithDescriptor:td];
+        MTLRenderPipelineDescriptor *pd[2] = { [MTLRenderPipelineDescriptor new], [MTLRenderPipelineDescriptor new] };
+        NSString *fn[2] = { @"put2", @"get2" };
+        id<MTLRenderPipelineState> ps[2];
+        for (int k = 0; k < 2; k++) {
+            pd[k].vertexFunction = [lib newFunctionWithName:@"fs_quad"];
+            pd[k].fragmentFunction = [lib newFunctionWithName:fn[k]];
+            for (int i = 0; i < 3; i++) {
+                pd[k].colorAttachments[i].pixelFormat = MTLPixelFormatBGRA8Unorm;
+                pd[k].colorAttachments[i].writeMask = (k == 0) == (i > 0) ? MTLColorWriteMaskAll : MTLColorWriteMaskNone;
+            }
+            ps[k] = [dev newRenderPipelineStateWithDescriptor:pd[k] error:nil];
+        }
+        if (!m1 || !m2 || !out || !ps[0] || !ps[1]) { printf("two memoryless: no texture or pipeline\n"); fails++; }
+        else {
+            MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+            id<MTLTexture> at[3] = { out, m1, m2 };
+            for (int i = 0; i < 3; i++) {
+                rp.colorAttachments[i].texture = at[i];
+                rp.colorAttachments[i].loadAction = MTLLoadActionClear;
+                rp.colorAttachments[i].clearColor = MTLClearColorMake(0, 0, 0, 1);
+                rp.colorAttachments[i].storeAction = i ? MTLStoreActionDontCare : MTLStoreActionStore;
+            }
+            id<MTLCommandBuffer> cb = [q commandBuffer];
+            id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
+            for (int k = 0; k < 2; k++) {
+                [e setRenderPipelineState:ps[k]];
+                [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+            }
+            [e endEncoding];
+            [cb commit];
+            [cb waitUntilCompleted];
+            runs++;
+            [out getBytes:px bytesPerRow:(size_t)w * 4 fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
+            const uint8_t *c = px + 4 * ((size_t)(h / 2) * w + w / 2);
+            int ok = !cb.error && abs(c[0] - 128) <= 3 && abs(c[1] - 77) <= 3 && abs(c[2] - 102) <= 3;
+            printf("%s two memoryless attachments of one shape: rgb %3u %3u %3u (expected 102 77 128)\n", ok ? "ok  " : "FAIL",
+                   c[2], c[1], c[0]);
+            fails += !ok;
+        }
     }}
     printf("%d/%d passed\n", runs - fails, runs);
     free(px);

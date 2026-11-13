@@ -197,7 +197,54 @@ static vmg_texture_desc VMTextureDesc(MTLTextureDescriptor *d) {
     return t;
 }
 
+// Memoryless pool: memoryless textures of one shape (format, size, samples, levels, usage) share one GPU backing; their
+// contents never outlive a pass. The backing goes with its last texture (the pool holds it weakly). Two attachments of
+// one pass on one backing: the encoder gives the second its own (unshareMemoryless). Off: the file
+// /private/var/tmp/vmg-no-memless-pool when the process starts.
+@interface VMMemorylessBacking : NSObject
+@property (readonly) vmg_texture *vmg;
+@end
+@implementation VMMemorylessBacking {
+    VMDevice *_device;
+}
+- (instancetype)initWithDevice:(VMDevice *)device texture:(vmg_texture *)t {
+    if ((self = [super init])) { _device = device; _vmg = t; }
+    return self;
+}
+- (void)dealloc {
+    vmg_texture *t = _vmg;
+    VMDevice *d = _device;
+    if (t && d) [d gpuAsync:^{ vmg_texture_release(d.vmg, t); }];
+}
+@end
+
+static BOOL VMMemorylessPoolOn(void) {
+    static int on = -1;
+    if (on < 0) on = access("/private/var/tmp/vmg-no-memless-pool", F_OK) != 0;
+    return on;
+}
+
+static VMMemorylessBacking *VMMemorylessShared(VMDevice *device, MTLTextureDescriptor *d, const vmg_texture_desc *td) {
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSMapTable<NSString *, VMMemorylessBacking *> *pool;
+    NSString *key = [NSString stringWithFormat:@"%p %lu %lu %lux%lux%lu %lu %lu %lu %lu", (__bridge void *)device,
+                     (unsigned long)d.textureType, (unsigned long)d.pixelFormat, (unsigned long)d.width, (unsigned long)d.height,
+                     (unsigned long)d.depth, (unsigned long)d.arrayLength, (unsigned long)d.mipmapLevelCount,
+                     (unsigned long)d.sampleCount, (unsigned long)d.usage];
+    os_unfair_lock_lock(&lock);
+    if (!pool) pool = [NSMapTable strongToWeakObjectsMapTable];
+    VMMemorylessBacking *b = [pool objectForKey:key];
+    if (!b) {
+        vmg_texture *t = vmg_texture_create(device.vmg, td);
+        b = t ? [[VMMemorylessBacking alloc] initWithDevice:device texture:t] : nil;
+        if (b) [pool setObject:b forKey:key];
+    }
+    os_unfair_lock_unlock(&lock);
+    return b;
+}
+
 @implementation VMTexture {
+    VMMemorylessBacking *_backing;   // memoryless: the shared (or, after unshareMemoryless, own) backing
     __weak VMDevice *_device;
     VMDevice *_strongDevice;
     MTLTextureDescriptor *_desc;
@@ -228,6 +275,9 @@ VM_CATCH_ALL(VMTexture)
         __block vmg_texture *t = NULL;
         [device gpuSync:^{ t = vmg_texture_create_iosurface(device.vmg, &td, IOSurfaceGetID(surface), (unsigned)plane); }];
         _vmg = t;
+    } else if (td.memoryless && VMMemorylessPoolOn()) {
+        _backing = VMMemorylessShared(device, desc, &td);
+        _vmg = _backing.vmg;
     } else {
         _vmg = vmg_texture_create(device.vmg, &td);
     }
@@ -322,8 +372,17 @@ VM_CATCH_ALL(VMTexture)
 - (BOOL)traced { return _traced; }
 - (NSData *)noCopyData { return _noCopyBytes ? [NSData dataWithBytesNoCopy:_noCopyBytes length:_noCopyLength freeWhenDone:NO] : nil; }
 
+- (BOOL)memorylessShared { return _backing != nil; }
+- (void)unshareMemoryless {
+    vmg_texture_desc td = VMTextureDesc(_desc);
+    vmg_texture *t = vmg_texture_create(_strongDevice.vmg, &td);
+    if (!t) return;
+    _backing = [[VMMemorylessBacking alloc] initWithDevice:_strongDevice texture:t];
+    _vmg = t;
+}
+
 - (void)dealloc {
-    vmg_texture *t = _vmg;
+    vmg_texture *t = _backing ? NULL : _vmg;   // a memoryless backing goes with its last texture
     VMDevice *d = _strongDevice;
     if (t && d) [d gpuAsync:^{ vmg_texture_release(d.vmg, t); }];
     if (_surface) CFRelease(_surface);
