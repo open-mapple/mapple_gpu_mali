@@ -3,6 +3,8 @@
 // mp_scaler), a VideoToolbox pixel transfer, CoreImage on Metal and with the software renderer; each stage's time
 // (from its call to its pixels read back).
 // Usage: phototest IMAGE [OUTDIR]   (OUTDIR: each stage's output as a PPM)
+//        phototest IMAGE --surftrace LIBSURFTRACE: only CoreImage into a BGRA IOSurface (software, then Metal), with every
+//        IOSurface call it makes on stderr (the library inserted; tests/surftrace.c)
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <CoreVideo/CoreVideo.h>
@@ -74,7 +76,14 @@ static IOSurfaceRef bgra_surface(size_t w, size_t h) {
 
 int main(int argc, char **argv) { @autoreleasepool {
     if (argc < 2) { printf("usage: phototest IMAGE [OUTDIR]\n"); return 2; }
-    outdir = argc > 2 ? argv[2] : NULL;
+    if (argc > 3 && strcmp(argv[2], "--surftrace") == 0 && !getenv("DYLD_INSERT_LIBRARIES")) {
+        setenv("DYLD_INSERT_LIBRARIES", argv[3], 1);
+        execv(argv[0], argv);
+        perror("execv");
+        return 1;
+    }
+    BOOL surftrace = argc > 3 && strcmp(argv[2], "--surftrace") == 0;
+    outdir = argc > 2 && !surftrace ? argv[2] : NULL;
     NSURL *url = [NSURL fileURLWithPath:@(argv[1])];
     CGImageSourceRef src = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
     if (!src) { printf("%s: ImageIO cannot open it\n", argv[1]); return 1; }
@@ -84,6 +93,34 @@ int main(int argc, char **argv) { @autoreleasepool {
     STAGE();
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, NULL);
     report_cgimage("1 ImageIO decode", img);
+    if (surftrace && img) {
+        size_t iw = CGImageGetWidth(img), ih = CGImageGetHeight(img);
+        uint8_t *pp = calloc(iw * ih, 4);
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef pc = CGBitmapContextCreate(pp, iw, ih, 8, iw * 4, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGContextDrawImage(pc, CGRectMake(0, 0, iw, ih), img);
+        CGImageRef plain = CGBitmapContextCreateImage(pc);
+        CIImage *ci = [[CIImage imageWithCGImage:plain] imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)];
+        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        NSArray *ctxs = @[ [CIContext contextWithOptions:@{ kCIContextUseSoftwareRenderer: @YES }], [CIContext contextWithMTLDevice:dev] ];
+        for (unsigned m = 0; m < 2; m++) {
+            NSDictionary *p = @{ (id)kIOSurfaceWidth: @((int)ci.extent.size.width), (id)kIOSurfaceHeight: @((int)ci.extent.size.height),
+                                 (id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfacePixelFormat: @((uint32_t)'BGRA') };
+            IOSurfaceRef sf = IOSurfaceCreate((__bridge CFDictionaryRef)p);
+            fprintf(stderr, "== CoreImage %s into BGRA surface 0x%x\n", m ? "Metal" : "software", IOSurfaceGetID(sf));
+            setenv("SURFTRACE", "1", 1);
+            [(CIContext *)ctxs[m] render:ci toIOSurface:sf bounds:ci.extent colorSpace:cs];
+            unsetenv("SURFTRACE");
+            IOSurfaceLock(sf, kIOSurfaceLockReadOnly, NULL);
+            const uint8_t *b = IOSurfaceGetBaseAddress(sf);
+            size_t n = IOSurfaceGetBytesPerRow(sf) * IOSurfaceGetHeight(sf), nz = 0;
+            for (size_t i = 0; i < n; i++) nz += b[i] != 0;
+            IOSurfaceUnlock(sf, kIOSurfaceLockReadOnly, NULL);
+            fprintf(stderr, "== %s: %zu of %zu bytes non-zero\n", m ? "Metal" : "software", nz, n);
+            CFRelease(sf);
+        }
+        return 0;
+    }
 
     // 2. ImageIO thumbnail (what assetsd's thumbnails start from)
     NSDictionary *to = @{ (id)kCGImageSourceCreateThumbnailFromImageAlways: @YES, (id)kCGImageSourceThumbnailMaxPixelSize: @256,
