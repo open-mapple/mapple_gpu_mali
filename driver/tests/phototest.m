@@ -108,6 +108,19 @@ int main(int argc, char **argv) { @autoreleasepool {
         report_surface("2b IOSurface input as filled", in);
     }
 
+    // what the surface says about itself (CoreImage asks for plane 0 even on a surface without planes)
+    if (in) {
+        IOSurfaceLock(in, 0, NULL);
+        printf("surface: %zux%zu bpe %zu bpr %zu alloc %zu planes %zu base %p; plane 0: base %p w %zu h %zu bpr %zu bpe %zu "
+               "elem %zux%zu comps %zu\n", IOSurfaceGetWidth(in), IOSurfaceGetHeight(in), IOSurfaceGetBytesPerElement(in),
+               IOSurfaceGetBytesPerRow(in), IOSurfaceGetAllocSize(in), IOSurfaceGetPlaneCount(in), IOSurfaceGetBaseAddress(in),
+               IOSurfaceGetBaseAddressOfPlane(in, 0), IOSurfaceGetWidthOfPlane(in, 0), IOSurfaceGetHeightOfPlane(in, 0),
+               IOSurfaceGetBytesPerRowOfPlane(in, 0), IOSurfaceGetBytesPerElementOfPlane(in, 0),
+               IOSurfaceGetElementWidthOfPlane(in, 0), IOSurfaceGetElementHeightOfPlane(in, 0),
+               IOSurfaceGetNumberOfComponentsOfPlane(in, 0));
+        IOSurfaceUnlock(in, 0, NULL);
+    }
+
     // 3. IOSurfaceAccelerator (AppleM2ScalerCSCDriver: our MTKScaler, CPU or MDP backend)
     void *fw = dlopen("/System/Library/PrivateFrameworks/IOSurfaceAccelerator.framework/IOSurfaceAccelerator", RTLD_NOW);
     int (*create)(CFAllocatorRef, uint32_t, void **) = fw ? dlsym(fw, "IOSurfaceAcceleratorCreate") : NULL;
@@ -219,24 +232,34 @@ int main(int argc, char **argv) { @autoreleasepool {
             { 'BGRA', 4, "BGRA" }, { 'RGBA', 4, "RGBA" }, { 'RGhA', 8, "RGhA half" }, { 'RGfA', 16, "RGfA float" },
             { 'l10r', 4, "l10r 10-bit" },
         };
-        CIImage *ci = [[CIImage imageWithCGImage:img] imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)];
+        // the source as ImageIO decoded it, and the same pixels as a plain bitmap image (stage 5b's source)
+        uint8_t *pp = calloc(w * h, 4);
+        CGColorSpaceRef pcs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef pc = CGBitmapContextCreate(pp, w, h, 8, w * 4, pcs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGContextDrawImage(pc, CGRectMake(0, 0, w, h), img);
+        CGImageRef plain = CGBitmapContextCreateImage(pc);
+        CIImage *srcs[2] = { [[CIImage imageWithCGImage:img] imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)],
+                             [[CIImage imageWithCGImage:plain] imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)] };
+        CIImage *ci = srcs[0];
         CGRect ext = ci.extent;
         size_t ow = (size_t)ext.size.width, oh = (size_t)ext.size.height;
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
         NSArray *ctxs = @[ [CIContext contextWithOptions:@{ kCIContextUseSoftwareRenderer: @YES }],
                            dev ? [CIContext contextWithMTLDevice:dev] : (id)[NSNull null] ];
+        for (unsigned from = 0; from < 2; from++)
         for (unsigned k = 0; k < sizeof fmts / sizeof *fmts; k++)
             for (unsigned m = 0; m < 2; m++) {
+                if (from && k > 0) continue;   // the plain source: BGRA only
                 if (ctxs[m] == (id)[NSNull null]) continue;
                 NSDictionary *p = @{ (id)kIOSurfaceWidth: @(ow), (id)kIOSurfaceHeight: @(oh), (id)kIOSurfaceBytesPerElement: @(fmts[k].bpe),
                                      (id)kIOSurfacePixelFormat: @(fmts[k].fourcc) };
                 IOSurfaceRef sf = IOSurfaceCreate((__bridge CFDictionaryRef)p);
                 char stage[64];
-                snprintf(stage, sizeof stage, "7 CI %s into %s", m ? "Metal" : "soft", fmts[k].name);
+                snprintf(stage, sizeof stage, "7 CI %s into %s%s", m ? "Metal" : "soft", fmts[k].name, from ? ", plain src" : "");
                 if (!sf) { printf("%-34s no surface\n", stage); continue; }
                 STAGE();
-                [(CIContext *)ctxs[m] render:ci toIOSurface:sf bounds:ext colorSpace:cs];
+                [(CIContext *)ctxs[m] render:srcs[from] toIOSurface:sf bounds:ext colorSpace:cs];
                 IOSurfaceLock(sf, kIOSurfaceLockReadOnly, NULL);
                 const uint8_t *b = IOSurfaceGetBaseAddress(sf);
                 size_t n = IOSurfaceGetBytesPerRow(sf) * oh, nz = 0;
@@ -248,6 +271,10 @@ int main(int argc, char **argv) { @autoreleasepool {
                 CFRelease(sf);
             }
         CGColorSpaceRelease(cs);
+        CGImageRelease(plain);
+        CGContextRelease(pc);
+        CGColorSpaceRelease(pcs);
+        free(pp);
     }
     printf("%s\n", zeros ? "a stage gave all zeros" : "no stage gave all zeros");
     if (in) CFRelease(in);
