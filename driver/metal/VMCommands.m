@@ -461,6 +461,7 @@ static BOOL VMTraceEvents(void) {
 
 @implementation VMCommandQueue {
     __weak VMDevice *_device;
+    NSUInteger _gpuPriority, _backgroundGPUPriority;
 }
 VM_CATCH_ALL(VMCommandQueue)
 
@@ -469,6 +470,12 @@ VM_CATCH_ALL(VMCommandQueue)
     return self;
 }
 - (id<MTLDevice>)device { return _device; }
+// Asked for by clients that wrap a queue (CMImaging's CMMTLCommandQueue forwards only what this answers): kept, not
+// used, the GPU has no queue priorities here.
+- (NSUInteger)GPUPriority { return _gpuPriority; }
+- (void)setGPUPriority:(NSUInteger)priority { _gpuPriority = priority; }
+- (NSUInteger)backgroundGPUPriority { return _backgroundGPUPriority; }
+- (void)setBackgroundGPUPriority:(NSUInteger)priority { _backgroundGPUPriority = priority; }
 - (id<MTLCommandBuffer>)commandBuffer { return [[VMCommandBuffer alloc] initWithQueue:self retainedReferences:YES]; }
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences { return [[VMCommandBuffer alloc] initWithQueue:self retainedReferences:NO]; }
 - (id<MTLCommandBuffer>)commandBufferWithDescriptor:(MTLCommandBufferDescriptor *)desc {
