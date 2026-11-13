@@ -212,6 +212,43 @@ int main(int argc, char **argv) { @autoreleasepool {
         if (a) CGImageRelease(a);
         if (b) CGImageRelease(b);
     }
+    // 7. CoreImage rendered into an IOSurface of each format it uses (render:toIOSurface:), software and Metal;
+    // the surface's raw bytes read back: none non-zero = the write never landed
+    if (img) {
+        static const struct { uint32_t fourcc; int bpe; const char *name; } fmts[] = {
+            { 'BGRA', 4, "BGRA" }, { 'RGBA', 4, "RGBA" }, { 'RGhA', 8, "RGhA half" }, { 'RGfA', 16, "RGfA float" },
+            { 'l10r', 4, "l10r 10-bit" },
+        };
+        CIImage *ci = [[CIImage imageWithCGImage:img] imageByApplyingTransform:CGAffineTransformMakeScale(0.25, 0.25)];
+        CGRect ext = ci.extent;
+        size_t ow = (size_t)ext.size.width, oh = (size_t)ext.size.height;
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        NSArray *ctxs = @[ [CIContext contextWithOptions:@{ kCIContextUseSoftwareRenderer: @YES }],
+                           dev ? [CIContext contextWithMTLDevice:dev] : (id)[NSNull null] ];
+        for (unsigned k = 0; k < sizeof fmts / sizeof *fmts; k++)
+            for (unsigned m = 0; m < 2; m++) {
+                if (ctxs[m] == (id)[NSNull null]) continue;
+                NSDictionary *p = @{ (id)kIOSurfaceWidth: @(ow), (id)kIOSurfaceHeight: @(oh), (id)kIOSurfaceBytesPerElement: @(fmts[k].bpe),
+                                     (id)kIOSurfacePixelFormat: @(fmts[k].fourcc) };
+                IOSurfaceRef sf = IOSurfaceCreate((__bridge CFDictionaryRef)p);
+                char stage[64];
+                snprintf(stage, sizeof stage, "7 CI %s into %s", m ? "Metal" : "soft", fmts[k].name);
+                if (!sf) { printf("%-34s no surface\n", stage); continue; }
+                STAGE();
+                [(CIContext *)ctxs[m] render:ci toIOSurface:sf bounds:ext colorSpace:cs];
+                IOSurfaceLock(sf, kIOSurfaceLockReadOnly, NULL);
+                const uint8_t *b = IOSurfaceGetBaseAddress(sf);
+                size_t n = IOSurfaceGetBytesPerRow(sf) * oh, nz = 0;
+                for (size_t i = 0; i < n; i++) nz += b[i] != 0;
+                IOSurfaceUnlock(sf, kIOSurfaceLockReadOnly, NULL);
+                printf("%-34s %4zux%-4zu %5.1f%% of bytes non-zero, %7.1f ms%s\n", stage, ow, oh, 100.0 * nz / (double)n,
+                       1000 * (CFAbsoluteTimeGetCurrent() - started), nz ? "" : "   ALL ZERO");
+                zeros += !nz;
+                CFRelease(sf);
+            }
+        CGColorSpaceRelease(cs);
+    }
     printf("%s\n", zeros ? "a stage gave all zeros" : "no stage gave all zeros");
     if (in) CFRelease(in);
     if (out) CFRelease(out);
