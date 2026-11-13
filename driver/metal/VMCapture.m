@@ -2,7 +2,7 @@
 // compressed texture (any pass while /private/var/tmp/vmg-capture-all exists too) is written out whole, for tests/cafetch-replay to rebuild: the attachments, each pipeline's
 // descriptor and function constants, every binding and draw in order, the bytes of the buffers each draw has bound
 // and of the compressed textures. At most six passes per process, to VMG_SHM_STATS_DIR/pass-<pid>-<n>/
-// (script.txt, b<n>.bin).
+// (script.txt, b<n>.bin); writing vmg-capture-all again allows six more.
 #import "VMPrivate.h"
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -10,6 +10,17 @@
 #include <sys/stat.h>
 
 static const void *const kConstantsKey = &kConstantsKey;
+static _Atomic int written;     // passes this process has written since vmg-capture-all last changed: at most six
+
+BOOL VMPassCaptureRoom(void) {
+    static _Atomic long armed;  // vmg-capture-all's modification time when the count started
+    struct stat st;
+    if (stat("/private/var/tmp/vmg-capture-all", &st) == 0 && st.st_mtime != atomic_load(&armed)) {
+        atomic_store(&armed, st.st_mtime);
+        atomic_store(&written, 0);
+    }
+    return atomic_load(&written) < 6;
+}
 
 void VMCaptureSetConstants(id function, NSString *line) {
     if (function && line) objc_setAssociatedObject(function, kConstantsKey, line, OBJC_ASSOCIATION_COPY);
@@ -134,7 +145,6 @@ void VMCaptureSetConstants(id function, NSString *line) {
 }
 
 - (void)finish {
-    static _Atomic int written;
     if (!_compressed && !_all) return;
     int n = atomic_fetch_add(&written, 1);
     if (n >= 6) return;
