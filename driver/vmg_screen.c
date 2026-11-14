@@ -681,12 +681,25 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
         IOSurfaceRef s = IOSurfaceLookup(surface_id);
         uint32_t sfmt = 0, sw = 0, sh = 0;
         if (s) {
-            wh.stride = (unsigned)(IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s));
+            bool planar = IOSurfaceGetPlaneCount(s) > 0;
+            wh.stride = (unsigned)(planar ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s));
             sfmt = IOSurfaceGetPixelFormat(s);
-            sw = (uint32_t)IOSurfaceGetWidth(s); sh = (uint32_t)IOSurfaceGetHeight(s);
+            sw = (uint32_t)(planar ? IOSurfaceGetWidthOfPlane(s, plane) : IOSurfaceGetWidth(s));
+            sh = (uint32_t)(planar ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s));
             CFRelease(s);
         }
         static int logged;
+        // A texture taller than the surface, or with rows longer than its pitch, would have the GPU write past the
+        // surface's pages: refused (Metal refuses it too).
+        if (s && (templ.height0 > sh || util_format_get_stride(templ.format, templ.width0) > wh.stride)) {
+            if (logged < 32) {
+                logged++;
+                fprintf(stderr, "vmg: IOSurface %u plane %u %ux%u bpr %u: texture %ux%u %s larger than the surface, refused\n",
+                        surface_id, plane, sw, sh, wh.stride, templ.width0, templ.height0, util_format_short_name(templ.format));
+            }
+            vmg_drm_surface_fd_close((int)wh.handle);
+            return NULL;
+        }
         if ((wh.stride & 63) && logged < 32) {
             logged++;
             fprintf(stderr, "vmg: IOSurface %u plane %u %ux%u '%c%c%c%c' bpr %u: pitch not 64-aligned, copied (texture %ux%u %s)\n",
