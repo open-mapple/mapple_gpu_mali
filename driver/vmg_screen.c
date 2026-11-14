@@ -645,6 +645,33 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
     if (templ.format == PIPE_FORMAT_NONE) return NULL;
     templ.bind |= PIPE_BIND_SHARED | PIPE_BIND_LINEAR;
     struct pipe_resource *res = NULL;
+    if (d->rotation) {
+        // CoreAnimation in landscape: the texture is the surface turned (its width and height swapped for odd turns).
+        // Always copied; the copies turn it (vmg_texture_sync).
+        IOSurfaceRef s = IOSurfaceLookup(surface_id);
+        if (!s) return NULL;
+        bool planar = IOSurfaceGetPlaneCount(s) > 0;
+        size_t bpr = planar ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
+        size_t sh = planar ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s);
+        unsigned bs = util_format_get_blocksize(templ.format);
+        uint32_t across = d->rotation & 1 ? templ.height0 : templ.width0, down = d->rotation & 1 ? templ.width0 : templ.height0;
+        bool fits = (size_t)across * bs <= bpr && down <= sh && !util_format_is_compressed(templ.format);
+        static int logged;
+        if (logged < 16 || !fits) {
+            logged++;
+            fprintf(stderr, "vmg: IOSurface %u plane %u bpr %zu height %zu: rotation %u, %s (texture %ux%u %s)\n", surface_id,
+                    plane, bpr, sh, d->rotation, fits ? "copied" : "larger than the surface, refused", templ.width0,
+                    templ.height0, util_format_short_name(templ.format));
+        }
+        if (!fits) { CFRelease(s); return NULL; }
+        templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
+        res = dev->screen->resource_create(dev->screen, &templ);
+        if (!res) { CFRelease(s); return NULL; }
+        vmg_texture *t = texture_wrap(res, d);
+        t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
+        t->surface = (void *)s;
+        return t;
+    }
     if (dev->panfrost) {
         // The kernel imports the surface pages as a BO (VGPU_SEL_IMPORT_IOSURFACE through drmPrimeFDToHandle, see
         // vmg_drm.c): the winsys handle carries the surface id as a "dma-buf fd".

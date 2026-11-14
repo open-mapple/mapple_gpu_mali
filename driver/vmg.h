@@ -67,6 +67,7 @@ typedef struct {
     unsigned mtl_format;           // MTLPixelFormat
     uint32_t width, height, depth, array_length, mip_levels, samples;
     bool render_target, shader_write, memoryless;
+    unsigned rotation;             // MTLTextureDescriptor's private rotation (quarter turns) of an IOSurface render target
 } vmg_texture_desc;
 
 vmg_texture *vmg_texture_create(vmg_device *dev, const vmg_texture_desc *desc);

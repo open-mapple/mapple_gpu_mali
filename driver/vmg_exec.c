@@ -25,6 +25,40 @@ static mesa_shader_stage gl_stage(enum vmg_stage s)
 
 static bool copy_in_allowed(vmg_device *dev, vmg_texture *t);
 
+// Rotated textures (MTLTextureDescriptor rotation, quarter turns): where texel (x, y) of a w x h texture lies in the
+// surface, as an M4 stores it (tests/rotation.m compares ours with it).
+static size_t rotated_offset(unsigned rotation, uint32_t x, uint32_t y, uint32_t w, uint32_t h, size_t bpr, unsigned bs)
+{
+    switch (rotation & 3) {
+    case 1: return (size_t)x * bpr + (size_t)(h - 1 - y) * bs;
+    case 2: return (size_t)(h - 1 - y) * bpr + (size_t)(w - 1 - x) * bs;
+    case 3: return (size_t)(w - 1 - x) * bpr + (size_t)y * bs;
+    }
+    return (size_t)y * bpr + (size_t)x * bs;
+}
+
+// ponytail: turned by the CPU in 32x32 blocks (a full landscape frame per copy); a turning GPU blit if it costs frames.
+static void rotated_copy(vmg_device *dev, vmg_texture *t, uint8_t *base, size_t bpr, bool to_texture)
+{
+    uint32_t w = t->res->width0, h = t->res->height0;
+    unsigned bs = util_format_get_blocksize(t->res->format);
+    struct pipe_box box;
+    u_box_2d(0, 0, (int)w, (int)h, &box);
+    struct pipe_transfer *x = NULL;
+    uint8_t *m = dev->pipe->texture_map(dev->pipe, t->res, 0, to_texture ? PIPE_MAP_WRITE | PIPE_MAP_DISCARD_RANGE : PIPE_MAP_READ,
+                                        &box, &x);
+    if (!m) return;
+    for (uint32_t y0 = 0; y0 < h; y0 += 32)
+        for (uint32_t x0 = 0; x0 < w; x0 += 32)
+            for (uint32_t y = y0; y < MIN2(y0 + 32, h); y++)
+                for (uint32_t i = x0; i < MIN2(x0 + 32, w); i++) {
+                    uint8_t *tex = m + y * x->stride + i * bs, *surf = base + rotated_offset(t->desc.rotation, i, y, w, h, bpr, bs);
+                    if (to_texture) memcpy(tex, surf, bs);
+                    else memcpy(surf, tex, bs);
+                }
+    dev->pipe->texture_unmap(dev->pipe, x);
+}
+
 void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
 {
     if (!t || !t->surface_copy || (!t->surface_id && !t->buffer)) return;
@@ -115,7 +149,9 @@ void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
     uint64_t bytes = (uint64_t)util_format_get_stride(t->res->format, w) * util_format_get_nblocksy(t->res->format, h);
     if (to_texture) { dev->stats.copy_in++; dev->stats.copy_in_bytes += bytes; }
     else { dev->stats.copy_out++; dev->stats.copy_out_bytes += bytes; }
-    if (to_texture) {
+    if (t->desc.rotation && s) {
+        rotated_copy(dev, t, base, bpr, to_texture);
+    } else if (to_texture) {
         struct pipe_box box;
         u_box_2d(0, 0, (int)w, (int)h, &box);
         dev->pipe->texture_subdata(dev->pipe, t->res, 0, PIPE_MAP_WRITE, &box, base, (unsigned)bpr, 0);

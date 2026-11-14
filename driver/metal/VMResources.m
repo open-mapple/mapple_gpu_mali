@@ -3,6 +3,7 @@
 // (unlike metal-shim's GL path). Textures are Gallium resources; CPU access (replaceRegion, getBytes) goes through
 // the GPU queue, ordered after the work submitted before it.
 #import "VMPrivate.h"
+#import <objc/message.h>
 #import <stdatomic.h>
 #include "../vmg_shm_stats.h"
 #include <notify.h>
@@ -194,6 +195,9 @@ static vmg_texture_desc VMTextureDesc(MTLTextureDescriptor *d) {
     t.render_target = (d.usage & MTLTextureUsageRenderTarget) != 0 || d.usage == MTLTextureUsageUnknown;
     t.shader_write = (d.usage & MTLTextureUsageShaderWrite) != 0;
     t.memoryless = d.storageMode == MTLStorageModeMemoryless;
+    // CoreAnimation renders landscape into the display's portrait surfaces through rotated textures (width and height
+    // the landscape ones).
+    if ([d respondsToSelector:@selector(rotation)]) t.rotation = (unsigned)((NSUInteger (*)(id, SEL))objc_msgSend)(d, @selector(rotation)) & 3;
     return t;
 }
 
