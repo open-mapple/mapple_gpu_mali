@@ -72,9 +72,16 @@ static void rotated_copy(vmg_device *dev, vmg_texture *t, uint8_t *base, size_t 
     dev->pipe->texture_unmap(dev->pipe, x);
 }
 
-// Pixel (x, y) of the destination fetches the source texel rotated_offset puts it at for k quarter turns, from the
-// source's size (Gallium's blit cannot transpose).
-static void *rotate_fs(vmg_device *dev, unsigned k)
+// Pixel (x, y) of the destination fetches the source texel rotated_offset puts it at for k quarter turns (Gallium's blit
+// cannot transpose). A folded surface (fold > 1: fold rows of row_px texels as one texture row) is unfolded on the
+// destination side and folded again on the source side; a folded source's size (mx + 1, my + 1) is given, else read.
+struct vmg_turn_fs {
+    unsigned k, fold_src, fold_dst, row_px, mx, my;
+    void *cso;
+    struct vmg_turn_fs *next;
+};
+
+static void *turn_fs_create(vmg_device *dev, const struct vmg_turn_fs *key)
 {
     nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, dev->screen->nir_options[MESA_SHADER_FRAGMENT], "vmg_rotate_fs");
     nir_shader *s = b.shader;
@@ -85,12 +92,31 @@ static void *rotate_fs(vmg_device *dev, unsigned k)
     nir_variable *out = nir_variable_create(s, nir_var_shader_out, glsl_vec4_type(), "color");
     out->data.location = FRAG_RESULT_DATA0;
     nir_def *p = nir_f2i32(&b, nir_trim_vector(&b, nir_load_frag_coord(&b), 2));
-    nir_def *m = nir_iadd_imm(&b, nir_txs(&b, .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_int32), -1);
-    nir_def *x = nir_channel(&b, p, 0), *y = nir_channel(&b, p, 1), *mx = nir_channel(&b, m, 0), *my = nir_channel(&b, m, 1);
-    nir_def *c = k == 1 ? nir_vec2(&b, nir_isub(&b, mx, y), x)
-               : k == 2 ? nir_vec2(&b, nir_isub(&b, mx, x), nir_isub(&b, my, y))
-                        : nir_vec2(&b, y, nir_isub(&b, my, x));
-    nir_store_var(&b, out, nir_txf(&b, c, .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_float32), 0xf);
+    nir_def *x = nir_channel(&b, p, 0), *y = nir_channel(&b, p, 1);
+    if (key->fold_dst > 1) {
+        nir_def *u = x;
+        x = nir_umod_imm(&b, u, key->row_px);
+        y = nir_iadd(&b, nir_imul_imm(&b, y, key->fold_dst), nir_udiv_imm(&b, u, key->row_px));
+    }
+    nir_def *mx, *my;
+    if (key->fold_src > 1) {
+        mx = nir_imm_int(&b, (int)key->mx);
+        my = nir_imm_int(&b, (int)key->my);
+    } else {
+        nir_def *m = nir_iadd_imm(&b, nir_txs(&b, .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_int32), -1);
+        mx = nir_channel(&b, m, 0);
+        my = nir_channel(&b, m, 1);
+    }
+    nir_def *cx = key->k == 0 ? x : key->k == 1 ? nir_isub(&b, mx, y) : key->k == 2 ? nir_isub(&b, mx, x) : y;
+    nir_def *cy = key->k == 0 ? y : key->k == 1 ? x : key->k == 2 ? nir_isub(&b, my, y) : nir_isub(&b, my, x);
+    // the row padding and the rows past the surface's end of a folded destination
+    cx = nir_imin(&b, nir_imax(&b, cx, nir_imm_int(&b, 0)), mx);
+    cy = nir_imin(&b, nir_imax(&b, cy, nir_imm_int(&b, 0)), my);
+    if (key->fold_src > 1) {
+        cx = nir_iadd(&b, cx, nir_imul_imm(&b, nir_umod_imm(&b, cy, key->fold_src), key->row_px));
+        cy = nir_udiv_imm(&b, cy, key->fold_src);
+    }
+    nir_store_var(&b, out, nir_txf(&b, nir_vec2(&b, cx, cy), .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_float32), 0xf);
     // As vmg_shader_create: the position as an input where the driver does not take it as a system value (llvmpipe).
     nir_lower_sysvals_to_varyings_options sv = { .frag_coord = !dev->screen->caps.fs_position_is_sysval };
     NIR_PASS(_, s, nir_lower_sysvals_to_varyings, &sv);
@@ -103,6 +129,31 @@ static void *rotate_fs(vmg_device *dev, unsigned k)
     return dev->pipe->create_fs_state(dev->pipe, &state);
 }
 
+static void *turn_fs(vmg_device *dev, const struct vmg_turn_fs *key)
+{
+    struct vmg_turn_fs *e;
+    for (e = dev->turn_fs; e; e = e->next)
+        if (e->k == key->k && e->fold_src == key->fold_src && e->fold_dst == key->fold_dst && e->row_px == key->row_px &&
+            e->mx == key->mx && e->my == key->my)
+            return e->cso;
+    e = malloc(sizeof *e);
+    *e = *key;
+    e->cso = turn_fs_create(dev, key);
+    e->next = dev->turn_fs;
+    dev->turn_fs = e;
+    return e->cso;
+}
+
+void vmg_turn_shaders_destroy(vmg_device *dev)
+{
+    for (struct vmg_turn_fs *e = dev->turn_fs, *n; e; e = n) {
+        n = e->next;
+        if (e->cso) dev->pipe->delete_fs_state(dev->pipe, e->cso);
+        free(e);
+    }
+    dev->turn_fs = NULL;
+}
+
 // One draw turns the landscape texture into the surface (or the surface into it), in GPU order. The encoder's state is
 // saved and restored around it (it may come in the middle of a pass); false (logged once): copy on the CPU.
 static bool rotate_on_gpu(vmg_device *dev, vmg_texture *t, bool to_texture)
@@ -113,11 +164,21 @@ static bool rotate_on_gpu(vmg_device *dev, vmg_texture *t, bool to_texture)
         enum tgsi_semantic pos = TGSI_SEMANTIC_POSITION;
         unsigned index = 0;
         dev->rotate_vs = util_make_vertex_passthrough_shader(pipe, 1, &pos, &index, false);
-        for (unsigned k = 1; k < 4; k++) dev->rotate_fs[k] = rotate_fs(dev, k);
-        dev->rotate_failed = !dev->blitter || !dev->rotate_vs || !dev->rotate_fs[1] || !dev->rotate_fs[2] || !dev->rotate_fs[3];
+        dev->rotate_failed = !dev->blitter || !dev->rotate_vs;
         if (dev->rotate_failed) fprintf(stderr, "vmg: rotated textures: no GPU pass (blitter or shaders), turned on the CPU\n");
     }
     if (dev->rotate_failed) return false;
+    unsigned fold = t->surface_fold > 1 ? t->surface_fold : 1;
+    struct vmg_turn_fs key = {
+        .k = to_texture ? t->desc.rotation & 3 : (4 - t->desc.rotation) & 3,
+        .fold_src = to_texture ? fold : 1, .fold_dst = to_texture ? 1 : fold, .row_px = fold > 1 ? t->surface_row_px : 0,
+    };
+    if (key.fold_src > 1) {   // the surface's size, as the texture turned
+        key.mx = (t->desc.rotation & 1 ? t->res->height0 : t->res->width0) - 1;
+        key.my = (t->desc.rotation & 1 ? t->res->width0 : t->res->height0) - 1;
+    }
+    void *fs = turn_fs(dev, &key);
+    if (!fs) return false;
     struct pipe_resource *src = to_texture ? t->surface_res : t->res, *dst = to_texture ? t->res : t->surface_res;
     enum pipe_format format = util_format_linear(t->res->format);
     struct pipe_sampler_view tmpl;
@@ -147,8 +208,7 @@ static bool rotate_on_gpu(vmg_device *dev, vmg_texture *t, bool to_texture)
     util_blitter_save_framebuffer(bl, &dev->fb);
     pipe->set_sampler_views(pipe, MESA_SHADER_FRAGMENT, 0, 1, 0, &view);
     pipe->bind_sampler_states(pipe, MESA_SHADER_FRAGMENT, 0, 1, &dev->sampler_default);
-    unsigned k = to_texture ? t->desc.rotation & 3 : (4 - t->desc.rotation) & 3;
-    util_blitter_custom_shader(bl, &surf, dst->width0, dst->height0, dev->rotate_vs, dev->rotate_fs[k]);
+    util_blitter_custom_shader(bl, &surf, dst->width0, dst->height0, dev->rotate_vs, fs);
     // Unbound before the view goes; the next draw binds its own textures.
     pipe->set_sampler_views(pipe, MESA_SHADER_FRAGMENT, 0, 0, 1, NULL);
     if (pipe->sampler_view_release) pipe->sampler_view_release(pipe, view);

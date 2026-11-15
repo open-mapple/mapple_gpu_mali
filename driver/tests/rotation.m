@@ -2,7 +2,8 @@
 // with MTLTextureDescriptor's private rotation (quarter turns; width and height swapped for odd turns) over a surface.
 // A draw writes each pixel's position, a second pass loads and stores it again; then, over a surface the CPU filled,
 // a pass loads it and adds each pixel's position. The surface must hold what the Mac's GPU leaves in it, for each turn,
-// with 64-byte pitches (turned on the GPU) and one that is not (turned on the CPU).
+// with 64-byte pitches and ones that are not (folded), all turned on the GPU; the large surface copied on the GPU
+// unturned too.
 // Usage: rotation   (llvmpipe; VMG_DRIVER=panfrost VGPU_BACKEND=mock runs Panfrost's import and passes, but the mock
 // runs no jobs, so its pixels differ)
 #import <Metal/Metal.h>
@@ -21,8 +22,8 @@ static NSString *const kMSL = @
     "#include <metal_stdlib>\nusing namespace metal;\n"
     "struct V { float4 pos [[position]]; };\n"
     "vertex V tri(uint v [[vertex_id]]) { float2 p = float2((v << 1) & 2, v & 2); V o; o.pos = float4(p * 2 - 1, 0, 1); return o; }\n"
-    "fragment float4 where(V i [[stage_in]]) { return float4(floor(i.pos.xy) / 255.0, 0.5, 1); }\n"
-    "fragment float4 where0(V i [[stage_in]]) { return float4(floor(i.pos.xy) / 255.0, 0, 0); }\n";
+    "fragment float4 where(V i [[stage_in]]) { return float4(fmod(floor(i.pos.xy), 256.0) / 255.0, 0.5, 1); }\n"
+    "fragment float4 where0(V i [[stage_in]]) { return float4(fmod(floor(i.pos.xy), 256.0) / 255.0, 0, 0); }\n";
 
 static IOSurfaceRef surface(int w, int h, int bpr, bool filled) {
     IOSurfaceRef s = IOSurfaceCreate((__bridge CFDictionaryRef)@{ (id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h),
@@ -79,10 +80,10 @@ static void draw(id<MTLDevice> dev, IOSurfaceRef s, NSUInteger rotation, bool ad
 int main(void) {
     @autoreleasepool {
         id<MTLDevice> ours = TSMtlCreateDevice(), ref = MTLCreateSystemDefaultDevice();
-        static const int shapes[][3] = { { 61, 29, 256 }, { 47, 31, 192 }, { 37, 53, 176 } };   // w, h, bpr (176: not 64-aligned)
+        static const int shapes[][3] = { { 61, 29, 256 }, { 47, 31, 192 }, { 37, 53, 176 }, { 1117, 1000, 4496 } };   // w, h, bpr
         int failed = 0;
         for (int add = 0; add < 2; add++)
-            for (unsigned k = 0; k < 3; k++)
+            for (unsigned k = 0; k < 4; k++)
                 for (NSUInteger r = 0; r < 4; r++) {
                     int w = shapes[k][0], h = shapes[k][1], bpr = shapes[k][2];
                     IOSurfaceRef a = surface(w, h, bpr, add), b = surface(w, h, bpr, add);
@@ -98,8 +99,7 @@ int main(void) {
                     for (int y = 0; y < h; y++)
                         for (int x = 0; x < w; x++)
                             if (memcmp(pa + y * bpr + x * 4, pb + y * bpr + x * 4, 4) && !bad++) { fx = x; fy = y; }
-                    // Rotated textures turn on the GPU where the surface has a 64-byte pitch, else on the CPU.
-                    bool gpu = gpu1 > gpu0, cpu = cpu1 > cpu0, path_ok = !r || (bpr % 64 ? cpu && !gpu : gpu && !cpu);
+                    bool gpu = gpu1 > gpu0, cpu = cpu1 > cpu0, path_ok = !cpu && (r ? gpu : bpr * h < (1 << 20) || gpu);
                     printf("%s %s rotation %lu, %dx%d bpr %d, %s: ", bad || !path_ok ? "FAIL" : "ok  ", add ? "load+add" : "draw    ",
                            (unsigned long)r, w, h, bpr, !r ? "not turned" : gpu && !cpu ? "GPU" : cpu && !gpu ? "CPU" : gpu ? "GPU+CPU" : "none");
                     if (bad) {

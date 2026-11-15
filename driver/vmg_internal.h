@@ -62,7 +62,8 @@ struct vmg_texture {
     void *surface;                    // IOSurfaceRef of a copied surface texture (retained: a lookup is a kernel call)
     uint32_t surface_seed;            // seed after the last copy (CPU writers bump it at unlock): unchanged = no copy-in
     bool surface_seed_valid;
-    struct pipe_resource *surface_res; // rotated textures: the surface itself (portrait), turned into/from res on the GPU
+    struct pipe_resource *surface_res; // the surface itself (portrait), copied (and turned) into/from res on the GPU
+    uint32_t surface_fold, surface_row_px; // surface_res holds surface_fold rows of surface_row_px texels per texture row
     // Linear textures over a buffer the driver cannot alias (Panfrost: no user memory): same, from/to the buffer.
     vmg_resource *buffer; size_t buffer_offset, buffer_bpr;
     uint32_t buf_view_offset, buf_view_size;   // PIPE_BUFFER view straight on a buffer's resource (bytes; size 0 = whole)
@@ -76,6 +77,7 @@ struct vmg_texture {
 
 // Copied textures (surface_copy): IOSurface/buffer -> texture (to_texture) or back.
 void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture);
+void vmg_turn_shaders_destroy(vmg_device *dev);
 // After the GPU wrote a copied texture: copy-out now (buffers) or at the flush (surfaces, vmg_flush).
 void vmg_texture_written(vmg_device *dev, vmg_texture *t);
 // A texture going away: its pending copy-out is made now.
@@ -166,7 +168,8 @@ struct vmg_device {
     struct pipe_sampler_view *null_view;
     // Rotated surface textures (vmg_exec.c): a blitter of our own, and a fragment shader per quarter turn.
     struct blitter_context *blitter;
-    void *rotate_vs, *rotate_fs[4];
+    void *rotate_vs;
+    struct vmg_turn_fs *turn_fs;          // one per quarter turn and fold (vmg_exec.c)
     bool rotate_failed;
 };
 

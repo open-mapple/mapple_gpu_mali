@@ -455,7 +455,7 @@ void vmg_device_destroy(vmg_device *dev)
     if (dev->blend_default) dev->pipe->delete_blend_state(dev->pipe, dev->blend_default);
     if (dev->blitter) util_blitter_destroy(dev->blitter);
     if (dev->rotate_vs) dev->pipe->delete_vs_state(dev->pipe, dev->rotate_vs);
-    for (unsigned k = 0; k < 4; k++) if (dev->rotate_fs[k]) dev->pipe->delete_fs_state(dev->pipe, dev->rotate_fs[k]);
+    vmg_turn_shaders_destroy(dev);
     pipe_sampler_view_reference(&dev->null_view, NULL);
     free(dev->copy_out);
     dev->pipe->destroy(dev->pipe);
@@ -642,46 +642,85 @@ vmg_texture *vmg_texture_create(vmg_device *dev, const vmg_texture_desc *d)
     return res ? texture_wrap(res, d) : NULL;
 }
 
-// The surface of a rotated texture imported as a portrait texture (across x down) beside it, as the non-rotated path
-// imports it; how the copies turn it: on the GPU, or on the CPU and why.
-static const char *rotated_import(vmg_device *dev, vmg_texture *t, const struct pipe_resource *landscape, uint32_t across,
+// The surface of a copied texture imported beside it (portrait, across x down), for the copies (and turns) on the GPU;
+// NULL, or why they stay on the CPU. A pitch the driver cannot take (Valhall: rows of 64 bytes; llvmpipe: its own
+// layout) is folded: f surface rows side by side as one texture row of f * bpr bytes, for the smallest f it takes.
+static const char *surface_import(vmg_device *dev, vmg_texture *t, const struct pipe_resource *texture, uint32_t across,
                                   uint32_t down, size_t bpr)
 {
-    struct pipe_resource templ = *landscape;
-    if (!(templ.bind & PIPE_BIND_RENDER_TARGET) || util_format_is_pure_integer(templ.format) || templ.nr_samples > 1)
-        return "copied (not a colour render target)";
+    struct pipe_resource templ = *texture;
+    if (!(templ.bind & PIPE_BIND_RENDER_TARGET) || util_format_is_pure_integer(templ.format) || templ.nr_samples > 1 ||
+        templ.target != PIPE_TEXTURE_2D || templ.array_size > 1)
+        return "not a colour render target";
+    if (dev->panfrost && kernel_switch("kern.mapple_gpu_surf_copy")) return "kern.mapple_gpu_surf_copy";
     templ.format = util_format_linear(templ.format);
-    templ.width0 = across;
-    templ.height0 = (uint16_t)down;
     templ.last_level = 0;
-    struct pipe_resource *r = NULL;
-    if (dev->panfrost) {
-        if (bpr & 63) return "copied (pitch not 64-aligned)";
-        if (kernel_switch("kern.mapple_gpu_surf_copy")) return "copied (kern.mapple_gpu_surf_copy)";
-        struct winsys_handle wh = {0};
-        wh.type = WINSYS_HANDLE_TYPE_FD;
-        wh.handle = (unsigned)vmg_drm_surface_fd(dev->fd, t->surface_id, t->plane);
-        wh.stride = (unsigned)bpr;
-        wh.modifier = 0;   // DRM_FORMAT_MOD_LINEAR
-        templ.bind |= PIPE_BIND_SHARED;
-        r = dev->screen->resource_from_handle(dev->screen, &templ, &wh, PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
-        vmg_drm_surface_fd_close((int)wh.handle);
-    } else {
-        IOSurfaceRef s = (IOSurfaceRef)t->surface;
-        void *base = IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBaseAddressOfPlane(s, t->plane) : IOSurfaceGetBaseAddress(s);
-        uint64_t stride = 0;
-        if (dev->screen->resource_from_user_memory && !getenv("VMG_NO_ALIAS"))
+    IOSurfaceRef s = (IOSurfaceRef)t->surface;
+    bool planar = IOSurfaceGetPlaneCount(s) > 0;
+    unsigned bs = util_format_get_blocksize(templ.format);
+    size_t room = planar ? 0 : IOSurfaceGetAllocSize(s);   // planes are not folded (their end is not known here)
+    for (uint32_t f = 1; f <= 8; f *= 2) {
+        uint32_t rows = (down + f - 1) / f;
+        if (f > 1 && (bpr % bs || (uint64_t)rows * f * bpr > room || f * bpr / bs > 16384)) break;
+        if (dev->panfrost && ((f * bpr) & 63)) continue;
+        templ.width0 = f > 1 ? (uint32_t)(f * bpr / bs) : across;
+        templ.height0 = (uint16_t)(f > 1 ? rows : down);
+        struct pipe_resource *r = NULL;
+        if (dev->panfrost) {
+            struct winsys_handle wh = {0};
+            wh.type = WINSYS_HANDLE_TYPE_FD;
+            wh.handle = (unsigned)vmg_drm_surface_fd(dev->fd, t->surface_id, t->plane);
+            wh.stride = (unsigned)(f * bpr);
+            wh.modifier = 0;   // DRM_FORMAT_MOD_LINEAR
+            templ.bind |= PIPE_BIND_SHARED;
+            r = dev->screen->resource_from_handle(dev->screen, &templ, &wh, PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
+            vmg_drm_surface_fd_close((int)wh.handle);
+            if (!r) return "import refused";
+        } else {
+            void *base = planar ? IOSurfaceGetBaseAddressOfPlane(s, t->plane) : IOSurfaceGetBaseAddress(s);
+            uint64_t stride = 0;
+            if (!dev->screen->resource_from_user_memory || getenv("VMG_NO_ALIAS")) return "no user memory";
             r = dev->screen->resource_from_user_memory(dev->screen, &templ, base);
-        if (r && (!dev->screen->resource_get_param ||
-                  !dev->screen->resource_get_param(dev->screen, dev->pipe, r, 0, 0, 0, PIPE_RESOURCE_PARAM_STRIDE, 0, &stride) ||
-                  stride != bpr)) {
-            pipe_resource_reference(&r, NULL);
-            return "copied (pitch not the driver's)";
+            if (r && (!dev->screen->resource_get_param ||
+                      !dev->screen->resource_get_param(dev->screen, dev->pipe, r, 0, 0, 0, PIPE_RESOURCE_PARAM_STRIDE, 0, &stride) ||
+                      stride != f * bpr))
+                pipe_resource_reference(&r, NULL);
+            if (!r) continue;
         }
+        t->surface_res = r;
+        t->surface_fold = f;
+        t->surface_row_px = (uint32_t)(bpr / bs);
+        return NULL;
     }
-    if (!r) return "copied (import refused)";
-    t->surface_res = r;
-    return "turned on the GPU";
+    return "pitch not foldable";
+}
+
+// A surface the GPU cannot use in place: a texture of its own, copied from/to it around each use (vmg_texture_sync).
+// Large ones are copied on the GPU through the surface imported folded (the texture then a render target too).
+// ponytail: 1 MB threshold, below it a CPU copy is cheaper than splitting the pass for a draw; measure if it matters.
+static vmg_texture *copied_texture(vmg_device *dev, const vmg_texture_desc *d, struct pipe_resource *templ, uint32_t surface_id,
+                                   unsigned plane)
+{
+    templ->bind &= ~(unsigned)PIPE_BIND_SHARED;
+    IOSurfaceRef s = IOSurfaceLookup(surface_id);
+    bool planar = s && IOSurfaceGetPlaneCount(s) > 0;
+    size_t bpr = !s ? 0 : planar ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
+    bool gpu = s && !planar && bpr * templ->height0 >= (1u << 20) && templ->target == PIPE_TEXTURE_2D && !templ->last_level &&
+               !util_format_is_depth_or_stencil(templ->format) && !util_format_is_compressed(templ->format) &&
+               dev->screen->is_format_supported(dev->screen, templ->format, PIPE_TEXTURE_2D, 0, 0, PIPE_BIND_RENDER_TARGET);
+    if (gpu) templ->bind |= PIPE_BIND_RENDER_TARGET;
+    struct pipe_resource *res = dev->screen->resource_create(dev->screen, templ);
+    if (!res) { if (s) CFRelease(s); return NULL; }
+    vmg_texture *t = texture_wrap(res, d);
+    t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
+    t->surface = (void *)s;
+    static int logged;
+    if (gpu && !surface_import(dev, t, templ, templ->width0, templ->height0, bpr) && logged < 16) {
+        logged++;
+        fprintf(stderr, "vmg: IOSurface %u plane %u bpr %zu: copied on the GPU, %u surface row(s) a texture row\n", surface_id,
+                plane, bpr, t->surface_fold);
+    }
+    return t;
 }
 
 vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_desc *d, uint32_t surface_id, unsigned plane)
@@ -704,6 +743,7 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
         bool fits = (size_t)across * bs <= bpr && down <= sh && !util_format_is_compressed(templ.format);
         vmg_texture *t = NULL;
         const char *how = "larger than the surface, refused";
+        char buf[64];
         if (fits) {
             templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
             res = dev->screen->resource_create(dev->screen, &templ);
@@ -711,7 +751,10 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
             t = texture_wrap(res, d);
             t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
             t->surface = (void *)s;
-            how = rotated_import(dev, t, &templ, across, down, bpr);
+            const char *why = surface_import(dev, t, &templ, across, down, bpr);
+            if (why) snprintf(buf, sizeof buf, "copied (%s)", why);
+            else snprintf(buf, sizeof buf, "turned on the GPU, %u surface row(s) a texture row", t->surface_fold);
+            how = buf;
         }
         static int logged;
         if (logged < 16 || !fits) {
@@ -768,15 +811,7 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
                     surface_id, plane, sw, sh, sfmt >> 24, (sfmt >> 16) & 0xff, (sfmt >> 8) & 0xff, sfmt & 0xff, wh.stride,
                     templ.width0, templ.height0, util_format_short_name(templ.format));
         }
-        if (!res) {
-            templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
-            res = dev->screen->resource_create(dev->screen, &templ);
-            if (!res) return NULL;
-            vmg_texture *t = texture_wrap(res, d);
-            t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
-            t->surface = (void *)IOSurfaceLookup(surface_id);
-            return t;
-        }
+        if (!res) return copied_texture(dev, d, &templ, surface_id, plane);
     } else {
         // llvmpipe: alias the surface memory when the layout matches (stride checked after creation), else copy.
         IOSurfaceRef s = IOSurfaceLookup(surface_id);
@@ -796,14 +831,7 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
             if (stride != bpr) pipe_resource_reference(&res, NULL);
         }
         CFRelease(s);
-        if (!res) {
-            res = dev->screen->resource_create(dev->screen, &templ);
-            if (!res) return NULL;
-            vmg_texture *t = texture_wrap(res, d);
-            t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
-            t->surface = (void *)IOSurfaceLookup(surface_id);
-            return t;
-        }
+        if (!res) return copied_texture(dev, d, &templ, surface_id, plane);
     }
     if (!res) return NULL;
     vmg_texture *t = texture_wrap(res, d);
