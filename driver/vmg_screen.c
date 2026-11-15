@@ -13,6 +13,7 @@
 #include "nir_builder.h"
 #include "compiler/glsl_types.h"
 #include "util/hash_table.h"
+#include "util/u_blitter.h"
 #include "util/u_dynarray.h"
 #include "util/u_inlines.h"
 #include "util/u_math.h"
@@ -452,6 +453,9 @@ void vmg_device_destroy(vmg_device *dev)
     if (dev->fs_empty) dev->pipe->delete_fs_state(dev->pipe, dev->fs_empty);
     if (dev->velems_empty) dev->pipe->delete_vertex_elements_state(dev->pipe, dev->velems_empty);
     if (dev->blend_default) dev->pipe->delete_blend_state(dev->pipe, dev->blend_default);
+    if (dev->blitter) util_blitter_destroy(dev->blitter);
+    if (dev->rotate_vs) dev->pipe->delete_vs_state(dev->pipe, dev->rotate_vs);
+    for (unsigned k = 0; k < 4; k++) if (dev->rotate_fs[k]) dev->pipe->delete_fs_state(dev->pipe, dev->rotate_fs[k]);
     pipe_sampler_view_reference(&dev->null_view, NULL);
     free(dev->copy_out);
     dev->pipe->destroy(dev->pipe);
@@ -638,6 +642,48 @@ vmg_texture *vmg_texture_create(vmg_device *dev, const vmg_texture_desc *d)
     return res ? texture_wrap(res, d) : NULL;
 }
 
+// The surface of a rotated texture imported as a portrait texture (across x down) beside it, as the non-rotated path
+// imports it; how the copies turn it: on the GPU, or on the CPU and why.
+static const char *rotated_import(vmg_device *dev, vmg_texture *t, const struct pipe_resource *landscape, uint32_t across,
+                                  uint32_t down, size_t bpr)
+{
+    struct pipe_resource templ = *landscape;
+    if (!(templ.bind & PIPE_BIND_RENDER_TARGET) || util_format_is_pure_integer(templ.format) || templ.nr_samples > 1)
+        return "copied (not a colour render target)";
+    templ.format = util_format_linear(templ.format);
+    templ.width0 = across;
+    templ.height0 = (uint16_t)down;
+    templ.last_level = 0;
+    struct pipe_resource *r = NULL;
+    if (dev->panfrost) {
+        if (bpr & 63) return "copied (pitch not 64-aligned)";
+        if (kernel_switch("kern.mapple_gpu_surf_copy")) return "copied (kern.mapple_gpu_surf_copy)";
+        struct winsys_handle wh = {0};
+        wh.type = WINSYS_HANDLE_TYPE_FD;
+        wh.handle = (unsigned)vmg_drm_surface_fd(dev->fd, t->surface_id, t->plane);
+        wh.stride = (unsigned)bpr;
+        wh.modifier = 0;   // DRM_FORMAT_MOD_LINEAR
+        templ.bind |= PIPE_BIND_SHARED;
+        r = dev->screen->resource_from_handle(dev->screen, &templ, &wh, PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
+        vmg_drm_surface_fd_close((int)wh.handle);
+    } else {
+        IOSurfaceRef s = (IOSurfaceRef)t->surface;
+        void *base = IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBaseAddressOfPlane(s, t->plane) : IOSurfaceGetBaseAddress(s);
+        uint64_t stride = 0;
+        if (dev->screen->resource_from_user_memory && !getenv("VMG_NO_ALIAS"))
+            r = dev->screen->resource_from_user_memory(dev->screen, &templ, base);
+        if (r && (!dev->screen->resource_get_param ||
+                  !dev->screen->resource_get_param(dev->screen, dev->pipe, r, 0, 0, 0, PIPE_RESOURCE_PARAM_STRIDE, 0, &stride) ||
+                  stride != bpr)) {
+            pipe_resource_reference(&r, NULL);
+            return "copied (pitch not the driver's)";
+        }
+    }
+    if (!r) return "copied (import refused)";
+    t->surface_res = r;
+    return "turned on the GPU";
+}
+
 vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_desc *d, uint32_t surface_id, unsigned plane)
 {
     struct pipe_resource templ;
@@ -647,7 +693,7 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
     struct pipe_resource *res = NULL;
     if (d->rotation) {
         // CoreAnimation in landscape: the texture is the surface turned (its width and height swapped for odd turns).
-        // Always copied; the copies turn it (vmg_texture_sync).
+        // Always copied: turned on the GPU into/from the surface imported beside it, else on the CPU (vmg_texture_sync).
         IOSurfaceRef s = IOSurfaceLookup(surface_id);
         if (!s) return NULL;
         bool planar = IOSurfaceGetPlaneCount(s) > 0;
@@ -656,20 +702,24 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
         unsigned bs = util_format_get_blocksize(templ.format);
         uint32_t across = d->rotation & 1 ? templ.height0 : templ.width0, down = d->rotation & 1 ? templ.width0 : templ.height0;
         bool fits = (size_t)across * bs <= bpr && down <= sh && !util_format_is_compressed(templ.format);
+        vmg_texture *t = NULL;
+        const char *how = "larger than the surface, refused";
+        if (fits) {
+            templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
+            res = dev->screen->resource_create(dev->screen, &templ);
+            if (!res) { CFRelease(s); return NULL; }
+            t = texture_wrap(res, d);
+            t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
+            t->surface = (void *)s;
+            how = rotated_import(dev, t, &templ, across, down, bpr);
+        }
         static int logged;
         if (logged < 16 || !fits) {
             logged++;
             fprintf(stderr, "vmg: IOSurface %u plane %u bpr %zu height %zu: rotation %u, %s (texture %ux%u %s)\n", surface_id,
-                    plane, bpr, sh, d->rotation, fits ? "copied" : "larger than the surface, refused", templ.width0,
-                    templ.height0, util_format_short_name(templ.format));
+                    plane, bpr, sh, d->rotation, how, templ.width0, templ.height0, util_format_short_name(templ.format));
         }
-        if (!fits) { CFRelease(s); return NULL; }
-        templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
-        res = dev->screen->resource_create(dev->screen, &templ);
-        if (!res) { CFRelease(s); return NULL; }
-        vmg_texture *t = texture_wrap(res, d);
-        t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
-        t->surface = (void *)s;
+        if (!fits) CFRelease(s);
         return t;
     }
     if (dev->panfrost) {
@@ -894,6 +944,7 @@ void vmg_texture_release(vmg_device *dev, vmg_texture *t)
         else pipe_sampler_view_reference(&t->view, NULL);
     }
     pipe_resource_reference(&t->res, NULL);
+    pipe_resource_reference(&t->surface_res, NULL);
     if (t->surface) CFRelease(t->surface);
     free(t);
 }

@@ -161,6 +161,8 @@ void vmg_air_cache_stats(uint64_t *hits, uint64_t *misses);
 const char *vmg_driver_build_id(void);
 // Draw bounds (P4) and clear draws (P5) of this process: draws bounded, thousands of pixels saved, draws made clears.
 void vmg_bounds_counters(uint64_t *draws, uint64_t *kpx, uint64_t *clears);
+// Process totals: rotated surface textures turned on the GPU and on the CPU (copies in and out).
+void vmg_rotation_counters(uint64_t *gpu, uint64_t *cpu);
 // Direct AIR -> Valhall ISA compiler counters of this process (driver/isa): functions compiled, fallbacks to the NIR
 // path, compile time, last fallback reason. And the GPU product id of the Panfrost device (0x9093 = Mali-G57 MC2;
 // 0 before a device exists or on other drivers).

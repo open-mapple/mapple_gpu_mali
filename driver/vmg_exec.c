@@ -9,6 +9,10 @@
 #include "util/u_inlines.h"
 #include "util/u_math.h"
 #include "util/u_gen_mipmap.h"
+#include "util/u_blitter.h"
+#include "util/u_sampler.h"
+#include "util/u_simple_shaders.h"
+#include "nir_builder.h"
 #include "util/format/u_format.h"
 #define XXH_INLINE_ALL
 #include "util/xxhash.h"
@@ -37,9 +41,18 @@ static size_t rotated_offset(unsigned rotation, uint32_t x, uint32_t y, uint32_t
     return (size_t)y * bpr + (size_t)x * bs;
 }
 
-// ponytail: turned by the CPU in 32x32 blocks (a full landscape frame per copy); a turning GPU blit if it costs frames.
+static uint64_t g_rotated_gpu, g_rotated_cpu;
+
+void vmg_rotation_counters(uint64_t *gpu, uint64_t *cpu)
+{
+    *gpu = __atomic_load_n(&g_rotated_gpu, __ATOMIC_RELAXED);
+    *cpu = __atomic_load_n(&g_rotated_cpu, __ATOMIC_RELAXED);
+}
+
+// Fallback when the surface could not be imported: turned by the CPU in 32x32 blocks (a full landscape frame per copy).
 static void rotated_copy(vmg_device *dev, vmg_texture *t, uint8_t *base, size_t bpr, bool to_texture)
 {
+    __atomic_fetch_add(&g_rotated_cpu, 1, __ATOMIC_RELAXED);
     uint32_t w = t->res->width0, h = t->res->height0;
     unsigned bs = util_format_get_blocksize(t->res->format);
     struct pipe_box box;
@@ -57,6 +70,92 @@ static void rotated_copy(vmg_device *dev, vmg_texture *t, uint8_t *base, size_t 
                     else memcpy(surf, tex, bs);
                 }
     dev->pipe->texture_unmap(dev->pipe, x);
+}
+
+// Pixel (x, y) of the destination fetches the source texel rotated_offset puts it at for k quarter turns, from the
+// source's size (Gallium's blit cannot transpose).
+static void *rotate_fs(vmg_device *dev, unsigned k)
+{
+    nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, dev->screen->nir_options[MESA_SHADER_FRAGMENT], "vmg_rotate_fs");
+    nir_shader *s = b.shader;
+    s->info.fs.origin_upper_left = true;
+    nir_variable *src = nir_variable_create(s, nir_var_uniform, glsl_texture_type(GLSL_SAMPLER_DIM_2D, false, GLSL_TYPE_FLOAT), "src");
+    src->data.binding = 0;
+    s->info.num_textures = 1;
+    nir_variable *out = nir_variable_create(s, nir_var_shader_out, glsl_vec4_type(), "color");
+    out->data.location = FRAG_RESULT_DATA0;
+    nir_def *p = nir_f2i32(&b, nir_trim_vector(&b, nir_load_frag_coord(&b), 2));
+    nir_def *m = nir_iadd_imm(&b, nir_txs(&b, .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_int32), -1);
+    nir_def *x = nir_channel(&b, p, 0), *y = nir_channel(&b, p, 1), *mx = nir_channel(&b, m, 0), *my = nir_channel(&b, m, 1);
+    nir_def *c = k == 1 ? nir_vec2(&b, nir_isub(&b, mx, y), x)
+               : k == 2 ? nir_vec2(&b, nir_isub(&b, mx, x), nir_isub(&b, my, y))
+                        : nir_vec2(&b, y, nir_isub(&b, my, x));
+    nir_store_var(&b, out, nir_txf(&b, c, .texture_index = 0, .dim = GLSL_SAMPLER_DIM_2D, .dest_type = nir_type_float32), 0xf);
+    // As vmg_shader_create: the position as an input where the driver does not take it as a system value (llvmpipe).
+    nir_lower_sysvals_to_varyings_options sv = { .frag_coord = !dev->screen->caps.fs_position_is_sysval };
+    NIR_PASS(_, s, nir_lower_sysvals_to_varyings, &sv);
+    nir_shader_gather_info(s, nir_shader_get_entrypoint(s));
+    BITSET_SET(s->info.textures_used, 0);
+    if (dev->screen->finalize_nir) dev->screen->finalize_nir(dev->screen, s, true);
+    nir_assign_io_var_locations(s, nir_var_shader_in);
+    nir_assign_io_var_locations(s, nir_var_shader_out);
+    struct pipe_shader_state state = { .type = PIPE_SHADER_IR_NIR, .ir.nir = s };
+    return dev->pipe->create_fs_state(dev->pipe, &state);
+}
+
+// One draw turns the landscape texture into the surface (or the surface into it), in GPU order. The encoder's state is
+// saved and restored around it (it may come in the middle of a pass); false (logged once): copy on the CPU.
+static bool rotate_on_gpu(vmg_device *dev, vmg_texture *t, bool to_texture)
+{
+    struct pipe_context *pipe = dev->pipe;
+    if (!dev->blitter && !dev->rotate_failed) {
+        dev->blitter = util_blitter_create(pipe);
+        enum tgsi_semantic pos = TGSI_SEMANTIC_POSITION;
+        unsigned index = 0;
+        dev->rotate_vs = util_make_vertex_passthrough_shader(pipe, 1, &pos, &index, false);
+        for (unsigned k = 1; k < 4; k++) dev->rotate_fs[k] = rotate_fs(dev, k);
+        dev->rotate_failed = !dev->blitter || !dev->rotate_vs || !dev->rotate_fs[1] || !dev->rotate_fs[2] || !dev->rotate_fs[3];
+        if (dev->rotate_failed) fprintf(stderr, "vmg: rotated textures: no GPU pass (blitter or shaders), turned on the CPU\n");
+    }
+    if (dev->rotate_failed) return false;
+    struct pipe_resource *src = to_texture ? t->surface_res : t->res, *dst = to_texture ? t->res : t->surface_res;
+    enum pipe_format format = util_format_linear(t->res->format);
+    struct pipe_sampler_view tmpl;
+    u_sampler_view_default_template(&tmpl, src, format);
+    struct pipe_sampler_view *view = pipe->create_sampler_view(pipe, src, &tmpl);
+    if (!view) return false;
+    struct pipe_surface surf;
+    memset(&surf, 0, sizeof surf);
+    surf.texture = dst;
+    surf.format = format;
+    struct blitter_context *bl = dev->blitter;
+    vmg_render_pipeline *p = dev->pipeline;
+    util_blitter_save_vertex_elements(bl, p ? p->velems : dev->velems_empty);
+    util_blitter_save_vertex_shader(bl, p && p->desc.vertex ? p->desc.vertex->cso : NULL);
+    util_blitter_save_geometry_shader(bl, NULL);
+    util_blitter_save_tessctrl_shader(bl, NULL);
+    util_blitter_save_tesseval_shader(bl, NULL);
+    util_blitter_save_so_targets(bl, 0, NULL, MESA_PRIM_POINTS);
+    util_blitter_save_rasterizer(bl, dev->raster_cso);
+    util_blitter_save_fragment_shader(bl, p ? (p->fs_variant ? p->fs_variant : p->desc.fragment ? p->desc.fragment->cso : dev->fs_empty)
+                                            : dev->fs_empty);
+    util_blitter_save_blend(bl, p ? p->blend : dev->blend_default);
+    util_blitter_save_depth_stencil_alpha(bl, dev->dsa ? dev->dsa->cso : dev->dsa_default);
+    util_blitter_save_stencil_ref(bl, &dev->stencil_ref);
+    util_blitter_save_sample_mask(bl, 0xffffffff, 1);
+    util_blitter_save_viewport(bl, &dev->viewport);
+    util_blitter_save_framebuffer(bl, &dev->fb);
+    pipe->set_sampler_views(pipe, MESA_SHADER_FRAGMENT, 0, 1, 0, &view);
+    pipe->bind_sampler_states(pipe, MESA_SHADER_FRAGMENT, 0, 1, &dev->sampler_default);
+    unsigned k = to_texture ? t->desc.rotation & 3 : (4 - t->desc.rotation) & 3;
+    util_blitter_custom_shader(bl, &surf, dst->width0, dst->height0, dev->rotate_vs, dev->rotate_fs[k]);
+    // Unbound before the view goes; the next draw binds its own textures.
+    pipe->set_sampler_views(pipe, MESA_SHADER_FRAGMENT, 0, 0, 1, NULL);
+    if (pipe->sampler_view_release) pipe->sampler_view_release(pipe, view);
+    else pipe_sampler_view_reference(&view, NULL);
+    dev->stats.blits++;
+    __atomic_fetch_add(&g_rotated_gpu, 1, __ATOMIC_RELAXED);
+    return true;
 }
 
 void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
@@ -119,6 +218,12 @@ void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
         t->buffer_hash_valid = false;   // copied out (the buffer now holds the texture) or recopy: hash again
         if (!to_texture) t->buffer->gpu_writes++;
         if (t->bcopy) t->bcopy->filled = false;
+    }
+    if (t->surface_res && s && rotate_on_gpu(dev, t, to_texture)) {
+        t->surface_seed = IOSurfaceGetSeed(s);
+        t->surface_seed_valid = true;
+        CFRelease(s);
+        return;
     }
     uint32_t lock_seed = 0;
     if (s) IOSurfaceLock(s, to_texture ? kIOSurfaceLockReadOnly : 0, &lock_seed);

@@ -11,6 +11,7 @@
 struct nir_shader;
 struct nir_shader_compiler_options;
 struct util_dynarray;
+struct blitter_context;
 
 // Constant buffer 0 of every stage: per-draw system values (layout in vmg_air.c); constant buffer 1: the shader's pool.
 #define VMG_SYSVAL_HEADER 192
@@ -61,6 +62,7 @@ struct vmg_texture {
     void *surface;                    // IOSurfaceRef of a copied surface texture (retained: a lookup is a kernel call)
     uint32_t surface_seed;            // seed after the last copy (CPU writers bump it at unlock): unchanged = no copy-in
     bool surface_seed_valid;
+    struct pipe_resource *surface_res; // rotated textures: the surface itself (portrait), turned into/from res on the GPU
     // Linear textures over a buffer the driver cannot alias (Panfrost: no user memory): same, from/to the buffer.
     vmg_resource *buffer; size_t buffer_offset, buffer_bpr;
     uint32_t buf_view_offset, buf_view_size;   // PIPE_BUFFER view straight on a buffer's resource (bytes; size 0 = whole)
@@ -162,6 +164,10 @@ struct vmg_device {
     void *velems_empty, *blend_default;   // neutral state bound between passes, so released pipelines' objects
                                           // are never left bound (u_blitter saves and restores bound state)
     struct pipe_sampler_view *null_view;
+    // Rotated surface textures (vmg_exec.c): a blitter of our own, and a fragment shader per quarter turn.
+    struct blitter_context *blitter;
+    void *rotate_vs, *rotate_fs[4];
+    bool rotate_failed;
 };
 
 // vmg_air.c
