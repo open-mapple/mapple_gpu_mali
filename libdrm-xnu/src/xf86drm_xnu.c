@@ -418,7 +418,9 @@ static void map_cache_drop(int fd, uint32_t handle)
 // Mesa asks lseek(fd, 0, SEEK_END) for the buffer size) registered with its surface id and plane.
 // A BO fd (vmg_drm_bo_fd) stands for a BO of this process (handle): importing it returns the same handle, so Panfrost
 // finds its own BO and a texture can alias a buffer (linear textures over MTLBuffers).
-typedef struct { int fd; uint32_t surface, plane; bool is_bo; uint32_t bo_handle; } SurfaceFd;
+// A user memory fd (drmUserMemoryFDXNU) stands for page-aligned memory of this process: importing it wires those pages
+// and maps them into the GPU (VGPU_SEL_IMPORT_USERPTR), for Panfrost's resource_from_user_memory.
+typedef struct { int fd; uint32_t surface, plane; bool is_bo; uint32_t bo_handle; bool is_user; uint64_t addr, size; } SurfaceFd;
 static SurfaceFd g_surf[256];
 static pthread_mutex_t g_surf_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -443,6 +445,33 @@ int vmg_drm_surface_fd(int device_fd, uint32_t surface_id, unsigned plane)
     pthread_mutex_lock(&g_surf_lock);
     for (unsigned i = 0; i < 256; i++) if (!g_surf[i].fd) { g_surf[i] = (SurfaceFd){ fd, surface_id, plane }; break; }
     pthread_mutex_unlock(&g_surf_lock);
+    return fd;
+}
+
+// A sparse temporary file of the memory's size (Mesa asks lseek for it), like a surface fd.
+static int size_fd(size_t size)
+{
+    char buf[1024];
+    const char *tmp = getenv("TMPDIR");
+    snprintf(buf, sizeof buf, "%s/vgpu-surface-XXXXXX", tmp ? tmp : "/tmp");
+    int fd = mkstemp(buf);
+    if (fd < 0) return -1;
+    unlink(buf);
+    if (ftruncate(fd, (off_t)size)) { close(fd); return -1; }
+    return fd;
+}
+
+int drmUserMemoryFDXNU(int device_fd, uint64_t addr, uint64_t size)
+{
+    (void)device_fd;
+    int fd = size_fd((size_t)size);
+    if (fd < 0) return -1;
+    pthread_mutex_lock(&g_surf_lock);
+    unsigned i = 0;
+    for (; i < 256 && g_surf[i].fd; i++) {}
+    if (i < 256) g_surf[i] = (SurfaceFd){ .fd = fd, .is_user = true, .addr = addr, .size = size };
+    pthread_mutex_unlock(&g_surf_lock);
+    if (i == 256) { close(fd); return -1; }
     return fd;
 }
 
@@ -477,6 +506,14 @@ int drmPrimeFDToHandle(int fd, int prime_fd, uint32_t *handle)
     pthread_mutex_unlock(&g_surf_lock);
     if (!sf.fd) { errno = EBADF; return -EBADF; }
     if (sf.is_bo) { *handle = sf.bo_handle; return 0; }
+    if (sf.is_user) {
+        struct vgpu_import_userptr u = { .addr = sf.addr, .size = sf.size };
+        flush_fd(fd);
+        int r = vgpu_ioctl(fd, VGPU_SEL_IMPORT_USERPTR, &u);
+        if (r) { errno = -r; return r; }
+        *handle = u.handle;
+        return 0;
+    }
     pthread_mutex_lock(&g_bo_lock);
     for (unsigned i = 0; i < g_bo_count; i++)
         if (g_bo[i].fd == fd && g_bo[i].surface == sf.surface && g_bo[i].plane == sf.plane) {

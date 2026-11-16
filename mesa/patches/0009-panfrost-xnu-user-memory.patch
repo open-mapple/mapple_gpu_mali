@@ -1,0 +1,105 @@
+XNU: buffers over the application's memory (resource_from_user_memory) through libdrm-xnu's user memory import; the CPU keeps the application's pointer.
+diff --git a/src/gallium/drivers/panfrost/pan_bo.c b/src/gallium/drivers/panfrost/pan_bo.c
+index a61ab47..6f54e01 100644
+--- a/src/gallium/drivers/panfrost/pan_bo.c
++++ b/src/gallium/drivers/panfrost/pan_bo.c
+@@ -439,6 +439,11 @@ panfrost_bo_munmap(struct panfrost_bo *bo)
+    if (!bo->ptr.cpu)
+       return;
+ 
++   if (bo->flags & PAN_BO_USER_MEMORY) {
++      bo->ptr.cpu = NULL;
++      return;
++   }
++
+ #ifdef __APPLE__
+    if (drmUnmap((void *)(uintptr_t)bo->ptr.cpu, panfrost_bo_size(bo))) {
+ #else
+diff --git a/src/gallium/drivers/panfrost/pan_bo.h b/src/gallium/drivers/panfrost/pan_bo.h
+index fb3c27d..8d332b7 100644
+--- a/src/gallium/drivers/panfrost/pan_bo.h
++++ b/src/gallium/drivers/panfrost/pan_bo.h
+@@ -38,6 +38,10 @@
+  * PAN_BO_SHARED if the BO has not been exported yet */
+ #define PAN_BO_SHAREABLE (1 << 5)
+ 
++/* The pages are the application's own (resource_from_user_memory): ptr.cpu is
++ * its pointer, never unmapped here. */
++#define PAN_BO_USER_MEMORY (1 << 6)
++
+ /* GPU access flags */
+ 
+ /* BO is either shared (can be accessed by more than one GPU batch) or private
+diff --git a/src/gallium/drivers/panfrost/pan_resource.c b/src/gallium/drivers/panfrost/pan_resource.c
+index 30b59e2..c56e62d 100644
+--- a/src/gallium/drivers/panfrost/pan_resource.c
++++ b/src/gallium/drivers/panfrost/pan_resource.c
+@@ -1201,6 +1201,58 @@ panfrost_resource_create_with_modifier(struct pipe_screen *screen,
+    return (struct pipe_resource *)so;
+ }
+ 
++#ifdef __APPLE__
++/* libdrm-xnu: a stand-in fd for the caller's page-aligned memory; importing it
++ * wires those pages and maps them into the GPU (VGPU_SEL_IMPORT_USERPTR). */
++int drmUserMemoryFDXNU(int fd, uint64_t addr, uint64_t size);
++void vmg_drm_surface_fd_close(int fd);
++
++/* Buffers over the application's memory (Metal's newBufferWithBytesNoCopy):
++ * the GPU uses the same pages, the CPU keeps the application's pointer. */
++static struct pipe_resource *
++panfrost_resource_from_user_memory(struct pipe_screen *pscreen,
++                                   const struct pipe_resource *templat,
++                                   void *user_memory)
++{
++   struct panfrost_device *dev = pan_device(pscreen);
++
++   if (templat->target != PIPE_BUFFER)
++      return NULL;
++
++   int fd = drmUserMemoryFDXNU(panfrost_device_fd(dev),
++                               (uint64_t)(uintptr_t)user_memory,
++                               templat->width0);
++   if (fd < 0)
++      return NULL;
++
++   struct panfrost_resource *rsc = CALLOC_STRUCT(panfrost_resource);
++   if (!rsc) {
++      vmg_drm_surface_fd_close(fd);
++      return NULL;
++   }
++
++   rsc->base = *templat;
++   rsc->base.screen = pscreen;
++   pipe_reference_init(&rsc->base.reference, 1);
++   util_range_init(&rsc->valid_buffer_range);
++   panfrost_resource_setup(pscreen, rsc, DRM_FORMAT_MOD_LINEAR,
++                           templat->format, 0);
++
++   int ret = panfrost_resource_import_bo(rsc, dev, fd);
++   vmg_drm_surface_fd_close(fd);
++   if (ret) {
++      panfrost_resource_destroy(pscreen, &rsc->base);
++      return NULL;
++   }
++
++   rsc->bo->flags |= PAN_BO_USER_MEMORY;
++   rsc->bo->ptr.cpu = user_memory;
++   rsc->plane.base = rsc->bo->ptr.gpu;
++   util_range_add(&rsc->base, &rsc->valid_buffer_range, 0, templat->width0);
++   return &rsc->base;
++}
++#endif
++
+ /* Default is to create a resource as don't care */
+ 
+ static struct pipe_resource *
+@@ -2587,6 +2639,9 @@ panfrost_resource_screen_init(struct pipe_screen *pscreen)
+    pscreen->resource_create = u_transfer_helper_resource_create;
+    pscreen->resource_destroy = u_transfer_helper_resource_destroy;
+    pscreen->resource_from_handle = panfrost_resource_from_handle;
++#ifdef __APPLE__
++   pscreen->resource_from_user_memory = panfrost_resource_from_user_memory;
++#endif
+    pscreen->resource_get_handle = panfrost_resource_get_handle;
+    pscreen->set_resource_label = panfrost_set_resource_label;
+    pscreen->resource_get_param = panfrost_resource_get_param;

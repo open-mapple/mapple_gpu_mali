@@ -120,9 +120,20 @@ VM_CATCH_ALL(VMBuffer)
 - (void)dealloc {
     vmg_resource *r = _vmg;
     VMDevice *d = _strongDevice;
-    if (r && d) [d gpuAsync:^{ vmg_resource_release(d.vmg, r); }];
+    void (^deallocator)(void *, NSUInteger) = _deallocator;
+    void *bytes = _userBytes;
+    NSUInteger length = _length;
     [d trackAllocation:-(int64_t)_length];
-    if (_deallocator) _deallocator(_userBytes, _length);
+    // the caller's memory goes back once the GPU thread has released the resource (its pages stay wired in the
+    // kernel until the last job using them is done)
+    if (r && d) {
+        [d gpuAsync:^{
+            vmg_resource_release(d.vmg, r);
+            if (deallocator) deallocator(bytes, length);
+        }];
+    } else if (deallocator) {
+        deallocator(bytes, length);
+    }
 }
 
 - (id<MTLDevice>)device { return _device; }

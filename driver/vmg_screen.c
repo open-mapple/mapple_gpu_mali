@@ -490,17 +490,23 @@ vmg_resource *vmg_buffer_create(vmg_device *dev, size_t size, void *user_memory,
                  PIPE_BIND_COMMAND_ARGS_BUFFER | PIPE_BIND_QUERY_BUFFER | PIPE_BIND_SAMPLER_VIEW;
     templ.usage = PIPE_USAGE_STAGING;   // CPU-visible, cached on unified memory
     templ.flags = PIPE_RESOURCE_FLAG_MAP_PERSISTENT | PIPE_RESOURCE_FLAG_MAP_COHERENT;
+    // newBufferWithBytesNoCopy: Metal's rule, a page-aligned pointer and length (no silent copy of other memory)
+    if (user_memory && (((uintptr_t)user_memory | size) & (vm_page_size - 1))) return NULL;
     vmg_resource *r = calloc(1, sizeof *r);
     r->size = size;
     if (user_memory && dev->screen->resource_from_user_memory)
         r->res = dev->screen->resource_from_user_memory(dev->screen, &templ, user_memory);
-    if (!r->res) r->res = dev->screen->resource_create(dev->screen, &templ);
-    if (!r->res) { free(r); return NULL; }
-    struct pipe_box box;
-    u_box_1d(0, templ.width0, &box);
-    r->map = dev->pipe->buffer_map(dev->pipe, r->res, 0,
-                                   PIPE_MAP_READ | PIPE_MAP_WRITE | PIPE_MAP_PERSISTENT | PIPE_MAP_COHERENT | PIPE_MAP_UNSYNCHRONIZED,
-                                   &box, &r->transfer);
+    if (r->res && dev->panfrost) {
+        r->map = user_memory;   // the GPU on the caller's pages, the CPU on its pointer (the kernel keeps them coherent)
+    } else {
+        if (!r->res) r->res = dev->screen->resource_create(dev->screen, &templ);   // mp_gpu_userptr=0: the copy below
+        if (!r->res) { free(r); return NULL; }
+        struct pipe_box box;
+        u_box_1d(0, templ.width0, &box);
+        r->map = dev->pipe->buffer_map(dev->pipe, r->res, 0,
+                                       PIPE_MAP_READ | PIPE_MAP_WRITE | PIPE_MAP_PERSISTENT | PIPE_MAP_COHERENT |
+                                       PIPE_MAP_UNSYNCHRONIZED, &box, &r->transfer);
+    }
     if (user_memory && r->map != user_memory && r->map) {   // copy fallback
         memcpy(r->map, user_memory, size);
         r->user_copy = true;
