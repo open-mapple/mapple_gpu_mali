@@ -26,7 +26,8 @@
 // Constant buffer 0 = per-draw system values (VMG_SYSVAL_HEADER bytes, uploaded by the encoder, vmg_exec.c):
 //   0   uint32 threadgroup_offset[8]   byte offset of each [[threadgroup(n)]] argument in shared memory
 //   32  uint32 threads_per_grid[3], pad
-//   48  uint32 render target sample count (air.get_num_samples), reserved[3]
+//   48  uint32 render target sample count (air.get_num_samples), reserved[2] (compute: tile width, height)
+//   60  uint32 textures bound          bit n: [[texture(n)]] has a texture (air.is_null_texture of an argument)
 //   64  uint32 buffer_base[32]         byte offset of each [[buffer(n)]] binding inside its SSBO, only with
 //                                      VMG_SSBO_BASE=1 (drivers that realign SSBO bindings; Panfrost does not)
 //   192 push window                    VMG_PUSH_WINDOW bytes: small constant buffers (reflection push_slots)
@@ -1581,6 +1582,15 @@ static val *texture(T *t, LLVMValueRef inst, const char *name)
     const char *op = name + 4;   // after "air."
     LLVMValueRef texArg = ts_LLVMGetOperand(inst, 0);
     LLVMTypeRef rt = ts_LLVMTypeOf(inst);
+    if (name_is(op, "is_null_texture")) {
+        if (is_undef(texArg)) return vssa(t, nir_imm_true(b));
+        val *nv = value(t, texArg);
+        if (!nv) return NULL;
+        if (nv->kind != V_TEX) FAIL(t, "texture call on a non-texture");
+        t->tex_dyn = nv->dyn;
+        nir_def *bit = nir_iand_imm(b, nir_ushr(b, sysval_word(t, 60, 1), image_index(t, nv->index)), 1);
+        return vssa(t, nir_ieq_imm(b, bit, 0));
+    }
     if (is_undef(texArg)) {
         if (ts_LLVMGetTypeKind(rt) == LLVMVoidTypeKind) return vnew(t, V_NONE);
         return zero_val(t, rt);
@@ -1959,7 +1969,8 @@ static bool is_texture_op(const char *op)
 {
     return name_is(op, "sample_") || name_is(op, "read_") || name_is(op, "write_") || name_is(op, "gather_") ||
            name_is(op, "get_width_") || name_is(op, "get_height_") || name_is(op, "get_depth_") ||
-           name_is(op, "get_array_size_") || name_is(op, "get_num_mip_levels_") || name_is(op, "get_num_samples_");
+           name_is(op, "get_array_size_") || name_is(op, "get_num_mip_levels_") || name_is(op, "get_num_samples_") ||
+           name_is(op, "is_null_texture_");
 }
 
 static val *call(T *t, LLVMValueRef inst)

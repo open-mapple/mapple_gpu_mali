@@ -806,6 +806,9 @@ static void bind_stage(vmg_device *dev, enum vmg_stage stage, vmg_shader *sh, co
     }
     if (extra_header) memcpy(header, extra_header, extra_words * 4);
     header[12] = dev->pass.samples ? dev->pass.samples : 1;
+    header[15] = 0;
+    for (unsigned i = 0; i < VMG_MAX_TEXTURES; i++)
+        if (b->textures[i]) header[15] |= 1u << i;
     struct pipe_shader_buffer ssbo[VMG_MAX_BUFFERS];
     static int base_on = -1;
     if (base_on < 0) base_on = getenv("VMG_SSBO_BASE") != NULL;

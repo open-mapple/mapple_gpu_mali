@@ -1606,6 +1606,18 @@ static void ref_C6p(const isa_case *c, const double *g, double *out) {
     }
 }
 
+// is_null_texture of kernel arguments: texture(0) and texture(2) bound, texture(1) not (MPS's optional inputs).
+static const char kD6a[] =
+    "kernel void k(device float4 *o [[buffer(0)]], texture2d<float> a [[texture(0)]], texture2d<float> b [[texture(1)]],\n"
+    "              texture2d<float> c [[texture(2)]], uint2 p [[thread_position_in_grid]]) {\n"
+    "  o[p.y * 8 + p.x] = float4(is_null_texture(a) ? 1.0 : 0.0, is_null_texture(b) ? 1.0 : 0.0, is_null_texture(c) ? 1.0 : 0.0,\n"
+    "                            float(a.get_width())); }\n";
+static void setup_D6a(ISAInputs *in) {
+    in.textures[@0] = tex_rgba8(in, 16, 16, 1, t16);
+    in.textures[@2] = tex_rgba8(in, 16, 16, 1, t16);
+}
+static void ref_D6a(const isa_case *c, const double *g, double *out) { PIX(c) set4(OUT(x, y), 0, 1, 0, 16); }
+
 // MPSGraph's stitching: the struct of buffer pointers and a null texture goes by reference to visible functions linked
 // at pipeline creation (MTLLinkedFunctions), which read and write the buffers by array number.
 static const char kG4s[] =
@@ -1773,6 +1785,8 @@ const isa_case isa_cases[] = {
     {CS(C6, ISA_OUT_F32), .title = "Memoria privata con indice dinamico", .vis_hi = 512},
     {.id = "C6", .title = "Puntatori a buffer e texture nulla in memoria privata (ndArray di MPS)", .kind = ISA_COMPUTE,
      .out = ISA_OUT_F32, .w = 64, .h = 64, .msl = kC6p, .ref = ref_C6p, .setup = setup_C1, .feats = "C1,D6", .vis_hi = 1000},
+    {.id = "D6", .title = "is_null_texture di argomenti: legati e no", .kind = ISA_COMPUTE, .out = ISA_OUT_F32, .w = 8, .h = 8,
+     .msl = kD6a, .ref = ref_D6a, .setup = setup_D6a, .vis_hi = 16},
     {CS(C7, ISA_OUT_F32), .title = "Struct: load/store di aggregati, packed_float3", .setup = setup_C7, .feats = "C8", .vis_lo = -64, .vis_hi = 200},
     {CS(C8, ISA_OUT_F32), .title = "memcpy device→device, memset privato", .setup = setup_C8, .feats = "C6,C7", .vis_hi = 256},
     {.id = "C9", .title = "Atomiche device: add, max, or, xor, and, sub", .kind = ISA_COMPUTE, .out = ISA_OUT_U32,
