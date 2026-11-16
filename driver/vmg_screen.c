@@ -729,8 +729,43 @@ static vmg_texture *copied_texture(vmg_device *dev, const vmg_texture_desc *d, s
     return t;
 }
 
+// CoreVideo's two-plane 4:2:0 surfaces ('420v', '420f') sampled as one texture, as Apple's GPUs do (measured on an M4):
+// YCBCR8_420_2P (500; 520 its sRGB twin) gives RGB by BT.601, video or full range as the surface's format says;
+// RGB8_420_2P (540) gives the raw (Cr, Y, Cb). Panfrost has no such sampling: an RGBA8 texture, converted from the
+// planes at each copy-in (vmg_texture_sync).
+static vmg_texture *ycbcr_texture(vmg_device *dev, const vmg_texture_desc *d, uint32_t surface_id)
+{
+    IOSurfaceRef s = IOSurfaceLookup(surface_id);
+    if (!s) return NULL;
+    uint32_t f = IOSurfaceGetPixelFormat(s);
+    bool ok = (f == '420v' || f == '420f') && IOSurfaceGetPlaneCount(s) == 2 && d->type == VMG_TEX_2D && d->mip_levels <= 1 &&
+              d->width && d->height && d->width <= IOSurfaceGetWidthOfPlane(s, 0) && d->height <= IOSurfaceGetHeightOfPlane(s, 0);
+    static int logged;
+    if (logged < 16) {
+        logged++;
+        fprintf(stderr, "vmg: IOSurface %u '%c%c%c%c' %zux%zu as format %u (texture %ux%u): %s\n", surface_id, f >> 24,
+                (f >> 16) & 0xff, (f >> 8) & 0xff, f & 0xff, IOSurfaceGetWidth(s), IOSurfaceGetHeight(s), d->mtl_format, d->width,
+                d->height, ok ? "converted to RGBA8 at each change" : "not a two-plane 4:2:0 surface of that size, refused");
+    }
+    struct pipe_resource templ;
+    memset(&templ, 0, sizeof templ);
+    templ.target = PIPE_TEXTURE_2D;
+    templ.format = d->mtl_format == 520 ? PIPE_FORMAT_R8G8B8A8_SRGB : PIPE_FORMAT_R8G8B8A8_UNORM;
+    templ.width0 = d->width;
+    templ.height0 = (uint16_t)d->height;
+    templ.depth0 = templ.array_size = 1;
+    templ.bind = PIPE_BIND_SAMPLER_VIEW;
+    struct pipe_resource *res = ok ? dev->screen->resource_create(dev->screen, &templ) : NULL;
+    if (!res) { CFRelease(s); return NULL; }
+    vmg_texture *t = texture_wrap(res, d);
+    t->surface_id = surface_id; t->surface_copy = t->ycbcr = true;
+    t->surface = (void *)s;
+    return t;
+}
+
 vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_desc *d, uint32_t surface_id, unsigned plane)
 {
+    if (d->mtl_format == 500 || d->mtl_format == 520 || d->mtl_format == 540) return ycbcr_texture(dev, d, surface_id);
     struct pipe_resource templ;
     texture_template(dev, d, &templ);
     if (templ.format == PIPE_FORMAT_NONE) return NULL;

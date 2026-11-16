@@ -218,6 +218,66 @@ static bool rotate_on_gpu(vmg_device *dev, vmg_texture *t, bool to_texture)
     return true;
 }
 
+// The chroma of luma texel x, as the M4 interpolates it: linear at the texel's centre (chroma texel (2x - 1) / 4,
+// weights 3/4 and 1/4), edges clamped, rounded to 8 bits once.
+static void chroma_taps(uint32_t x, uint32_t n, uint32_t *a, uint32_t *b, uint32_t *wa)
+{
+    int32_t i = x & 1 ? (int32_t)(x >> 1) : (int32_t)(x >> 1) - 1;
+    *wa = x & 1 ? 3 : 1;
+    *a = (uint32_t)CLAMP(i, 0, (int32_t)n - 1);
+    *b = (uint32_t)CLAMP(i + 1, 0, (int32_t)n - 1);
+}
+
+// ponytail: converted on the CPU at each change of the surface (seed); a GPU pass if large ones change every frame.
+static void ycbcr_copy_in(vmg_device *dev, vmg_texture *t)
+{
+    IOSurfaceRef s = (IOSurfaceRef)t->surface;
+    uint32_t seed = 0;
+    IOSurfaceLock(s, kIOSurfaceLockReadOnly, &seed);
+    const uint8_t *yp = IOSurfaceGetBaseAddressOfPlane(s, 0), *cp = IOSurfaceGetBaseAddressOfPlane(s, 1);
+    size_t ybpr = IOSurfaceGetBytesPerRowOfPlane(s, 0), cbpr = IOSurfaceGetBytesPerRowOfPlane(s, 1);
+    uint32_t cw = (uint32_t)IOSurfaceGetWidthOfPlane(s, 1), ch = (uint32_t)IOSurfaceGetHeightOfPlane(s, 1);
+    bool video = IOSurfaceGetPixelFormat(s) == '420v', raw = t->mtl_format == 540;
+    uint32_t w = t->res->width0, h = t->res->height0;
+    struct pipe_box box;
+    u_box_2d(0, 0, (int)w, (int)h, &box);
+    struct pipe_transfer *x = NULL;
+    uint8_t *m = dev->pipe->texture_map(dev->pipe, t->res, 0, PIPE_MAP_WRITE | PIPE_MAP_DISCARD_WHOLE_RESOURCE, &box, &x);
+    if (m) {
+        for (uint32_t j = 0; j < h; j++) {
+            uint32_t r0, r1, wr;
+            chroma_taps(j, ch, &r0, &r1, &wr);
+            const uint8_t *c0 = cp + r0 * cbpr, *c1 = cp + r1 * cbpr, *yrow = yp + j * ybpr;
+            uint8_t *o = m + j * x->stride;
+            for (uint32_t i = 0; i < w; i++, o += 4) {
+                uint32_t a, b, wa;
+                chroma_taps(i, cw, &a, &b, &wa);
+                uint32_t wb = 4 - wa, wr1 = 4 - wr;
+                uint32_t cb = (wr * (wa * c0[2 * a] + wb * c0[2 * b]) + wr1 * (wa * c1[2 * a] + wb * c1[2 * b]) + 8) >> 4;
+                uint32_t cr = (wr * (wa * c0[2 * a + 1] + wb * c0[2 * b + 1]) + wr1 * (wa * c1[2 * a + 1] + wb * c1[2 * b + 1]) + 8) >> 4;
+                if (raw) {
+                    o[0] = (uint8_t)cr; o[1] = yrow[i]; o[2] = (uint8_t)cb; o[3] = 255;
+                    continue;
+                }
+                // BT.601, video or full range (full: the M4's chroma is (C - 128) / 256, not / 255)
+                float y = video ? 1.164383f * (yrow[i] - 16.0f) : yrow[i], k = video ? 1.0f : 255.0f / 256.0f;
+                float u = k * (cb - 128.0f), v = k * (cr - 128.0f);
+                float rgb[3] = { video ? y + 1.596027f * v : y + 1.402f * v,
+                                 video ? y - 0.391762f * u - 0.812968f * v : y - 0.344136f * u - 0.714136f * v,
+                                 video ? y + 2.017232f * u : y + 1.772f * u };
+                for (int k = 0; k < 3; k++) o[k] = (uint8_t)CLAMP(rgb[k] + 0.5f, 0.0f, 255.0f);
+                o[3] = 255;
+            }
+        }
+        dev->pipe->texture_unmap(dev->pipe, x);
+    }
+    IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
+    t->surface_seed = seed;
+    t->surface_seed_valid = true;
+    dev->stats.copy_in++;
+    dev->stats.copy_in_bytes += (uint64_t)w * h * 4;
+}
+
 void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
 {
     if (!t || !t->surface_copy || (!t->surface_id && !t->buffer)) return;
@@ -238,6 +298,10 @@ void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
     }
     if (!to_texture) dev->copy_epoch++;
     t->copy_epoch = dev->copy_epoch;
+    if (t->ycbcr) {
+        if (to_texture) ycbcr_copy_in(dev, t);   // only sampled: nothing to copy out
+        return;
+    }
     IOSurfaceRef s = NULL;
     uint8_t *base;
     size_t bpr;

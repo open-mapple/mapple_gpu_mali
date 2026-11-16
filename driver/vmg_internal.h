@@ -59,6 +59,7 @@ struct vmg_texture {
     // writes, on the GPU queue.
     uint32_t surface_id; unsigned plane;
     bool surface_copy;
+    bool ycbcr;                       // a two-plane 4:2:0 surface in one RGBA8 texture (vmg_screen.c ycbcr_texture)
     void *surface;                    // IOSurfaceRef of a copied surface texture (retained: a lookup is a kernel call)
     uint32_t surface_seed;            // seed after the last copy (CPU writers bump it at unlock): unchanged = no copy-in
     bool surface_seed_valid;
