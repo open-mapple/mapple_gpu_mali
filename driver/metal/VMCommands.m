@@ -246,6 +246,9 @@ VM_CATCH_ALL(VMComputeEncoder)
     for (NSUInteger i = 0; i < count; i++) if (resources[i]) [VMEncoderCB(self) keepAlive:resources[i]];
 }
 - (void)useHeap:(id<MTLHeap>)heap { if (heap) [VMEncoderCB(self) keepAlive:heap]; }
+- (void)useHeaps:(const id<MTLHeap> __unsafe_unretained *)heaps count:(NSUInteger)count {
+    for (NSUInteger i = 0; i < count; i++) if (heaps[i]) [VMEncoderCB(self) keepAlive:heaps[i]];
+}
 - (void)updateFence:(id<MTLFence>)fence {}
 - (void)waitForFence:(id<MTLFence>)fence {}
 - (void)endEncoding {

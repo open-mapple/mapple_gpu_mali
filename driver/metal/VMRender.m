@@ -384,7 +384,18 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {
     for (NSUInteger i = 0; i < count; i++) if (resources[i]) [_cb keepAlive:resources[i]];
 }
+- (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage
+                stages:(MTLRenderStages)stages {
+    for (NSUInteger i = 0; i < count; i++) if (resources[i]) [_cb keepAlive:resources[i]];
+}
 - (void)useHeap:(id<MTLHeap>)heap { if (heap) [_cb keepAlive:heap]; }
+- (void)useHeap:(id<MTLHeap>)heap stages:(MTLRenderStages)stages { if (heap) [_cb keepAlive:heap]; }
+- (void)useHeaps:(const id<MTLHeap> __unsafe_unretained *)heaps count:(NSUInteger)count {
+    for (NSUInteger i = 0; i < count; i++) if (heaps[i]) [_cb keepAlive:heaps[i]];
+}
+- (void)useHeaps:(const id<MTLHeap> __unsafe_unretained *)heaps count:(NSUInteger)count stages:(MTLRenderStages)stages {
+    for (NSUInteger i = 0; i < count; i++) if (heaps[i]) [_cb keepAlive:heaps[i]];
+}
 - (void)updateFence:(id<MTLFence>)fence afterStages:(MTLRenderStages)stages {}
 - (void)waitForFence:(id<MTLFence>)fence beforeStages:(MTLRenderStages)stages {}
 @end
