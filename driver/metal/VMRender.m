@@ -274,6 +274,11 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained *)s withRange:(NSRange)r {
     for (NSUInteger k = 0; k < r.length; k++) [self setVertexSamplerState:s[k] atIndex:r.location + k];
 }
+// SPI: Photos binds each grid tile's texture and sampler in one call
+- (void)setVertexTexture:(id<MTLTexture>)t atTextureIndex:(NSUInteger)ti samplerState:(id<MTLSamplerState>)s atSamplerIndex:(NSUInteger)si {
+    [self setVertexTexture:t atIndex:ti];
+    [self setVertexSamplerState:s atIndex:si];
+}
 - (void)setFragmentBuffer:(id<MTLBuffer>)b offset:(NSUInteger)o atIndex:(NSUInteger)i { [self bindBuffer:b offset:o index:i stage:VMG_FRAGMENT]; }
 - (void)setFragmentBufferOffset:(NSUInteger)o atIndex:(NSUInteger)i { [self bindOffset:o index:i stage:VMG_FRAGMENT]; }
 - (void)setFragmentBytes:(const void *)p length:(NSUInteger)l atIndex:(NSUInteger)i { [self bindBytes:p length:l index:i stage:VMG_FRAGMENT]; }
@@ -288,6 +293,11 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)setFragmentSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)mn lodMaxClamp:(float)mx atIndex:(NSUInteger)i { [self bindSampler:s index:i stage:VMG_FRAGMENT]; }
 - (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained *)s withRange:(NSRange)r {
     for (NSUInteger k = 0; k < r.length; k++) [self setFragmentSamplerState:s[k] atIndex:r.location + k];
+}
+// SPI: Photos binds each grid tile's texture and sampler in one call
+- (void)setFragmentTexture:(id<MTLTexture>)t atTextureIndex:(NSUInteger)ti samplerState:(id<MTLSamplerState>)s atSamplerIndex:(NSUInteger)si {
+    [self setFragmentTexture:t atIndex:ti];
+    [self setFragmentSamplerState:s atIndex:si];
 }
 
 #pragma mark Draws
