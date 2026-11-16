@@ -238,9 +238,14 @@ VM_CATCH_ALL(VMComputeEncoder)
 - (void)memoryBarrierWithResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count {
     [self memoryBarrierWithScope:MTLBarrierScopeBuffers];
 }
-- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
-- (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
-- (void)useHeap:(id<MTLHeap>)heap {}
+// as the render encoder's: kept until the command buffer completes
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {
+    if (resource) [VMEncoderCB(self) keepAlive:resource];
+}
+- (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {
+    for (NSUInteger i = 0; i < count; i++) if (resources[i]) [VMEncoderCB(self) keepAlive:resources[i]];
+}
+- (void)useHeap:(id<MTLHeap>)heap { if (heap) [VMEncoderCB(self) keepAlive:heap]; }
 - (void)updateFence:(id<MTLFence>)fence {}
 - (void)waitForFence:(id<MTLFence>)fence {}
 - (void)endEncoding {

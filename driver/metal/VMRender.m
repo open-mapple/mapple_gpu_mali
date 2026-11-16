@@ -375,10 +375,16 @@ VM_CATCH_ALL(VMRenderEncoder)
 - (void)memoryBarrierWithScope:(MTLBarrierScope)scope afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before { [self recordBarrier]; }
 - (void)memoryBarrierWithResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count
                        afterStages:(MTLRenderStages)after beforeStages:(MTLRenderStages)before { [self recordBarrier]; }
-- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage {}
-- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages {}
-- (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {}
-- (void)useHeap:(id<MTLHeap>)heap {}
+// Resources the GPU reaches only through argument buffers or GPU addresses: kept until the command buffer completes
+// (a NoCopy buffer's deallocator must not run while a job still uses its pages).
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage { if (resource) [_cb keepAlive:resource]; }
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages {
+    if (resource) [_cb keepAlive:resource];
+}
+- (void)useResources:(const id<MTLResource> __unsafe_unretained *)resources count:(NSUInteger)count usage:(MTLResourceUsage)usage {
+    for (NSUInteger i = 0; i < count; i++) if (resources[i]) [_cb keepAlive:resources[i]];
+}
+- (void)useHeap:(id<MTLHeap>)heap { if (heap) [_cb keepAlive:heap]; }
 - (void)updateFence:(id<MTLFence>)fence afterStages:(MTLRenderStages)stages {}
 - (void)waitForFence:(id<MTLFence>)fence beforeStages:(MTLRenderStages)stages {}
 @end
