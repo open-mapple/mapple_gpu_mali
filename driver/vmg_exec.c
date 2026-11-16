@@ -239,16 +239,15 @@ static void ycbcr_copy_in(vmg_device *dev, vmg_texture *t)
     uint32_t cw = (uint32_t)IOSurfaceGetWidthOfPlane(s, 1), ch = (uint32_t)IOSurfaceGetHeightOfPlane(s, 1);
     bool video = IOSurfaceGetPixelFormat(s) == '420v', raw = t->mtl_format == 540;
     uint32_t w = t->res->width0, h = t->res->height0;
-    struct pipe_box box;
-    u_box_2d(0, 0, (int)w, (int)h, &box);
-    struct pipe_transfer *x = NULL;
-    uint8_t *m = dev->pipe->texture_map(dev->pipe, t->res, 0, PIPE_MAP_WRITE | PIPE_MAP_DISCARD_WHOLE_RESOURCE, &box, &x);
+    // Built in cached memory, then uploaded as the other copies are (texture_subdata): byte writes straight into a
+    // mapping of the texture (Panfrost's write-combined staging) took ~130 ms a 787x1705 surface.
+    uint8_t *m = malloc((size_t)w * h * 4);
     if (m) {
         for (uint32_t j = 0; j < h; j++) {
             uint32_t r0, r1, wr;
             chroma_taps(j, ch, &r0, &r1, &wr);
             const uint8_t *c0 = cp + r0 * cbpr, *c1 = cp + r1 * cbpr, *yrow = yp + j * ybpr;
-            uint8_t *o = m + j * x->stride;
+            uint8_t *o = m + (size_t)j * w * 4;
             for (uint32_t i = 0; i < w; i++, o += 4) {
                 uint32_t a, b, wa;
                 chroma_taps(i, cw, &a, &b, &wa);
@@ -269,7 +268,10 @@ static void ycbcr_copy_in(vmg_device *dev, vmg_texture *t)
                 o[3] = 255;
             }
         }
-        dev->pipe->texture_unmap(dev->pipe, x);
+        struct pipe_box box;
+        u_box_2d(0, 0, (int)w, (int)h, &box);
+        dev->pipe->texture_subdata(dev->pipe, t->res, 0, PIPE_MAP_WRITE, &box, m, w * 4, 0);
+        free(m);
     }
     IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
     t->surface_seed = seed;
