@@ -490,12 +490,16 @@ vmg_resource *vmg_buffer_create(vmg_device *dev, size_t size, void *user_memory,
                  PIPE_BIND_COMMAND_ARGS_BUFFER | PIPE_BIND_QUERY_BUFFER | PIPE_BIND_SAMPLER_VIEW;
     templ.usage = PIPE_USAGE_STAGING;   // CPU-visible, cached on unified memory
     templ.flags = PIPE_RESOURCE_FLAG_MAP_PERSISTENT | PIPE_RESOURCE_FLAG_MAP_COHERENT;
-    // newBufferWithBytesNoCopy: Metal's rule, a page-aligned pointer and length (no silent copy of other memory)
-    if (user_memory && (((uintptr_t)user_memory | size) & (vm_page_size - 1))) return NULL;
+    // newBufferWithBytesNoCopy, as Metal takes it: a page-aligned pointer with any length is imported in whole pages
+    // (the last one is the caller's own; the buffer keeps the length asked for); an unaligned pointer gets the copy.
+    bool aligned = user_memory && !((uintptr_t)user_memory & (vm_page_size - 1));
     vmg_resource *r = calloc(1, sizeof *r);
     r->size = size;
-    if (user_memory && dev->screen->resource_from_user_memory)
-        r->res = dev->screen->resource_from_user_memory(dev->screen, &templ, user_memory);
+    if (aligned && dev->screen->resource_from_user_memory) {
+        struct pipe_resource whole = templ;
+        whole.width0 = (unsigned)((MAX2(size, 16) + vm_page_size - 1) & ~(size_t)(vm_page_size - 1));
+        r->res = dev->screen->resource_from_user_memory(dev->screen, &whole, user_memory);
+    }
     if (r->res && dev->panfrost) {
         r->map = user_memory;   // the GPU on the caller's pages, the CPU on its pointer (the kernel keeps them coherent)
     } else {
