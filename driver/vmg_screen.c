@@ -773,6 +773,28 @@ vmg_texture *vmg_texture_create_iosurface(vmg_device *dev, const vmg_texture_des
     struct pipe_resource templ;
     texture_template(dev, d, &templ);
     if (templ.format == PIPE_FORMAT_NONE) return NULL;
+    if ((d->mtl_format == 554 || d->mtl_format == 555) && !d->rotation) {
+        // BGR10_XR: 32-bit texels in the surface, half floats here: always copied, converted both ways (vmg_texture_sync)
+        IOSurfaceRef s = IOSurfaceLookup(surface_id);
+        if (!s) return NULL;
+        bool planar = IOSurfaceGetPlaneCount(s) > 0;
+        size_t bpr = planar ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
+        size_t sh = planar ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s);
+        bool fits = (size_t)templ.width0 * 4 <= bpr && templ.height0 <= sh && !templ.last_level;
+        static int logged;
+        if (logged < 16) {
+            logged++;
+            fprintf(stderr, "vmg: IOSurface %u bpr %zu height %zu as format %u (texture %ux%u): %s\n", surface_id, bpr, sh,
+                    d->mtl_format, templ.width0, templ.height0, fits ? "copied as half floats" : "larger than the surface, refused");
+        }
+        templ.bind &= ~(unsigned)PIPE_BIND_SHARED;
+        struct pipe_resource *r = fits ? dev->screen->resource_create(dev->screen, &templ) : NULL;
+        if (!r) { CFRelease(s); return NULL; }
+        vmg_texture *t = texture_wrap(r, d);
+        t->surface_id = surface_id; t->plane = plane; t->surface_copy = true;
+        t->surface = (void *)s;
+        return t;
+    }
     templ.bind |= PIPE_BIND_SHARED | PIPE_BIND_LINEAR;
     struct pipe_resource *res = NULL;
     if (d->rotation) {
@@ -1026,11 +1048,57 @@ bool vmg_texture_is_copied(vmg_texture *t) { return t && t->surface_copy; }
 
 static unsigned layer_of(vmg_texture *t, unsigned slice, uint32_t z) { return t->res->target == PIPE_TEXTURE_3D ? z : t->first_layer + slice; }
 
+// BGR10_XR(_sRGB) texels as an M4 stores them: blue in bits 0-9, green 10-19, red 20-29, each (code - 384) / 510; the
+// sRGB format's values are the extended sRGB encoding (sign mirrored), the texture holding them linear. Alpha is 1 and
+// the top two bits are written as ones.
+bool vmg_texture_is_xr(const vmg_texture *t) { return t->mtl_format == 554 || t->mtl_format == 555; }
+
+static float srgb_ext(float v, bool decode)
+{
+    float a = fabsf(v), r = decode ? (a <= 0.04045f ? a / 12.92f : powf((a + 0.055f) / 1.055f, 2.4f))
+                                   : (a <= 0.0031308f ? a * 12.92f : 1.055f * powf(a, 1 / 2.4f) - 0.055f);
+    return v < 0 ? -r : r;
+}
+
+void vmg_xr_unpack(const vmg_texture *t, uint32_t p, uint16_t out[4])
+{
+    for (int c = 0; c < 3; c++) {
+        float v = ((float)((p >> (20 - 10 * c)) & 1023) - 384) / 510;
+        out[c] = _mesa_float_to_half(t->mtl_format == 555 ? srgb_ext(v, true) : v);
+    }
+    out[3] = _mesa_float_to_half(1);
+}
+
+uint32_t vmg_xr_pack(const vmg_texture *t, const uint16_t in[4])
+{
+    uint32_t p = 3u << 30;
+    for (int c = 0; c < 3; c++) {
+        float v = _mesa_half_to_float(in[c]);
+        if (t->mtl_format == 555) v = srgb_ext(v, false);
+        p |= (uint32_t)CLAMP(lroundf(v * 510 + 384), 0, 1023) << (20 - 10 * c);
+    }
+    return p;
+}
+
 void vmg_texture_write(vmg_device *dev, vmg_texture *t, unsigned level, unsigned slice, uint32_t x, uint32_t y, uint32_t z,
                        uint32_t w, uint32_t h, uint32_t d, const void *data, size_t row_pitch, size_t image_pitch)
 {
     struct pipe_box box;
     u_box_3d((int)x, (int)y, (int)layer_of(t, slice, z), (int)w, (int)h, (int)MAX2(d, 1), &box);
+    if (vmg_texture_is_xr(t)) {
+        uint16_t *tmp = malloc((size_t)w * h * MAX2(d, 1) * 8);
+        if (!tmp) return;
+        for (uint32_t k = 0; k < MAX2(d, 1); k++)
+            for (uint32_t r = 0; r < h; r++)
+                for (uint32_t i = 0; i < w; i++) {
+                    uint32_t p;
+                    memcpy(&p, (const uint8_t *)data + k * image_pitch + r * row_pitch + i * 4, 4);
+                    vmg_xr_unpack(t, p, tmp + 4 * (((size_t)k * h + r) * w + i));
+                }
+        dev->pipe->texture_subdata(dev->pipe, t->res, t->first_level + level, PIPE_MAP_WRITE, &box, tmp, w * 8, (uintptr_t)w * h * 8);
+        free(tmp);
+        return;
+    }
     dev->pipe->texture_subdata(dev->pipe, t->res, t->first_level + level, PIPE_MAP_WRITE, &box, data,
                                (unsigned)row_pitch, (uintptr_t)image_pitch);
     if (t->surface_copy) vmg_texture_sync(dev, t, false);   // the surface/buffer stays the reference copy
@@ -1049,8 +1117,17 @@ void vmg_texture_read(vmg_device *dev, vmg_texture *t, unsigned level, unsigned 
     unsigned rows = util_format_get_nblocksy(t->res->format, h);
     (void)fd;
     for (unsigned k = 0; k < MAX2(d, 1); k++)
-        for (unsigned r = 0; r < rows; r++)
-            memcpy((uint8_t *)data + k * image_pitch + r * row_pitch, map + k * xfer->layer_stride + r * xfer->stride, rowBytes);
+        for (unsigned r = 0; r < rows; r++) {
+            const uint8_t *src = map + k * xfer->layer_stride + r * xfer->stride;
+            uint8_t *dst = (uint8_t *)data + k * image_pitch + r * row_pitch;
+            if (!vmg_texture_is_xr(t)) { memcpy(dst, src, rowBytes); continue; }
+            for (uint32_t i = 0; i < w; i++) {
+                uint16_t px[4];
+                memcpy(px, src + i * 8, 8);
+                uint32_t p = vmg_xr_pack(t, px);
+                memcpy(dst + i * 4, &p, 4);
+            }
+        }
     dev->pipe->texture_unmap(dev->pipe, xfer);
 }
 

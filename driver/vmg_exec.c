@@ -228,6 +228,38 @@ static void chroma_taps(uint32_t x, uint32_t n, uint32_t *a, uint32_t *b, uint32
     *b = (uint32_t)CLAMP(i + 1, 0, (int32_t)n - 1);
 }
 
+// BGR10_XR surfaces: packed texels there, half floats in the texture.
+static void xr_copy(vmg_device *dev, vmg_texture *t, uint8_t *base, size_t bpr, bool to_texture)
+{
+    uint32_t w = t->res->width0, h = t->res->height0;
+    struct pipe_box box;
+    u_box_2d(0, 0, (int)w, (int)h, &box);
+    if (to_texture) {
+        uint16_t *tmp = malloc((size_t)w * h * 8);
+        if (!tmp) return;
+        for (uint32_t y = 0; y < h; y++)
+            for (uint32_t x = 0; x < w; x++) {
+                uint32_t p;
+                memcpy(&p, base + y * bpr + x * 4, 4);
+                vmg_xr_unpack(t, p, tmp + 4 * ((size_t)y * w + x));
+            }
+        dev->pipe->texture_subdata(dev->pipe, t->res, 0, PIPE_MAP_WRITE, &box, tmp, w * 8, 0);
+        free(tmp);
+        return;
+    }
+    struct pipe_transfer *x = NULL;
+    uint8_t *m = dev->pipe->texture_map(dev->pipe, t->res, 0, PIPE_MAP_READ, &box, &x);
+    if (!m) return;
+    for (uint32_t y = 0; y < h; y++)
+        for (uint32_t i = 0; i < w; i++) {
+            uint16_t px[4];
+            memcpy(px, m + y * x->stride + i * 8, 8);
+            uint32_t p = vmg_xr_pack(t, px);
+            memcpy(base + y * bpr + i * 4, &p, 4);
+        }
+    dev->pipe->texture_unmap(dev->pipe, x);
+}
+
 // ponytail: converted on the CPU at each change of the surface (seed); a GPU pass if large ones change every frame.
 static void ycbcr_copy_in(vmg_device *dev, vmg_texture *t)
 {
@@ -382,6 +414,8 @@ void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture)
     else { dev->stats.copy_out++; dev->stats.copy_out_bytes += bytes; }
     if (t->desc.rotation && s) {
         rotated_copy(dev, t, base, bpr, to_texture);
+    } else if (vmg_texture_is_xr(t) && s) {
+        xr_copy(dev, t, base, bpr, to_texture);
     } else if (to_texture) {
         struct pipe_box box;
         u_box_2d(0, 0, (int)w, (int)h, &box);

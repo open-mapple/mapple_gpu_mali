@@ -79,6 +79,10 @@ struct vmg_texture {
 // Copied textures (surface_copy): IOSurface/buffer -> texture (to_texture) or back.
 void vmg_texture_sync(vmg_device *dev, vmg_texture *t, bool to_texture);
 void vmg_turn_shaders_destroy(vmg_device *dev);
+// BGR10_XR(_sRGB), packed in memory and half floats in the texture (vmg_screen.c).
+bool vmg_texture_is_xr(const vmg_texture *t);
+void vmg_xr_unpack(const vmg_texture *t, uint32_t packed, uint16_t out[4]);
+uint32_t vmg_xr_pack(const vmg_texture *t, const uint16_t in[4]);
 // After the GPU wrote a copied texture: copy-out now (buffers) or at the flush (surfaces, vmg_flush).
 void vmg_texture_written(vmg_device *dev, vmg_texture *t);
 // A texture going away: its pending copy-out is made now.
