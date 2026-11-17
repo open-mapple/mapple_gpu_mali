@@ -95,9 +95,21 @@ static void TSSetDevice(CAMetalLayer *self, SEL _cmd, id device) {
 #endif
 }
 
+// The render server (backboardd) keeps static content in the framebuffer: detached, CoreAnimation hands it to the
+// display as a separate plane, which our framebuffer does not show (a static Photos grid went black).
+static void TSDisableCADetached(void) {
+    const char *(*name)(unsigned) = dlsym(RTLD_DEFAULT, "CAGetDebugOptionEnvVariableName");
+    void (*set)(unsigned, uint8_t) = dlsym(RTLD_DEFAULT, "CASetDebugOption");
+    for (unsigned i = 0; name && set && i <= 0x200; i++) {
+        const char *n = name(i);
+        if (n && !strcmp(n, "CA_DISABLE_DETACHED")) { set(i, 1); return; }
+    }
+}
+
 void TSMtlInstallLayerTuning(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        TSDisableCADetached();
         TSDisableCAGenericShaders();
         Class cls = NSClassFromString(@"CAMetalLayer");
         Method m1 = cls ? class_getInstanceMethod(cls, @selector(setMaximumDrawableCount:)) : NULL;
