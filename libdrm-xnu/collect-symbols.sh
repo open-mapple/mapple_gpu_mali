@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Regenerate SYMBOLS.txt: undefined drm* symbols referenced by the Mesa
 # static libraries in ../mesa/build-macos (run after ../mesa/build.sh).
 set -euo pipefail

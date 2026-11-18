@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: instruction selection from AIR (LLVM IR) to Valhall (internal).
 #pragma once
 #include "vi.h"

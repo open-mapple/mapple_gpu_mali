@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // BGR10_XR (554) and BGR10_XR_sRGB (555), CoreAnimation's extended-range format: a private texture and one over an
 // IOSurface ('w30r'), filled from the CPU with packed texels, read by a kernel, then cleared to extended values by a
 // render pass and read back packed; our device and the Mac's GPU must agree (values within 1/510, texels within one code).

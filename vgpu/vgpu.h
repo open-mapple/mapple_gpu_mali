@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple GPU userspace client: the only code that talks to the kernel driver (uapi/mapple_gpu_uapi.h).
 // Used by libdrm-xnu (Mesa's Panfrost) and directly by tests.
 //

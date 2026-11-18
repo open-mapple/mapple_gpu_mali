@@ -29,3 +29,5 @@ them through `libdrm-xnu`.
 
 Not used: a DRM node, dma-buf, sync files, KMS (frames go through IOSurface and AppleCLCD), performance
 counters. `vgpu/test_vgpu` checks the contract against the kernel (`VGPU_BACKEND=iokit`) or an in-process mock.
+
+Based on viva-gpu by Nicola Leone Ciardi - https://github.com/Nik300/viva-gpu (modified for Open Mapple; see `NOTICE`).

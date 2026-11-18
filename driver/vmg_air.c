@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - AIR (Metal's LLVM IR) -> NIR translator.
 //
 // Input: the bitcode Metal.framework keeps in every MTLFunction, parsed with the system libLLVM (vmg_llvm.h) and

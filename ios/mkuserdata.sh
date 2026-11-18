@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Builds a userdata image for viva with the Mapple Metal driver installed:
 #   /System/Library/Extensions/MappleMTLDriver.bundle   (Metal loads it once the kernel publishes MappleGPUAccelerator)
 #   /private/var/root/mapple-dev/                     (vmprobe, test_vgpu, compute, ... from ios/build.sh)

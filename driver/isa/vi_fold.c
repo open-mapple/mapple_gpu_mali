@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: constant folding, 16-bit lane peepholes and branch folding on the Valhall IR (before RA).
 //
 // What NIR's constant folding and nir_opt_algebraic give the Mesa path, done on the machine IR (the ISA path has no

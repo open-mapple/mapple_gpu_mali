@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: flow control for a register-allocated shader.
 //
 // Hardware rules (Valhall v9; Arm's ISA description and the behaviour Mesa relies on):

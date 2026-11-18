@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: SIMD-group and quad functions (F1-F4) and derivatives (E12).
 //
 // Valhall warps are 16 lanes (the Metal SIMD-group). CLPER reads a register of another lane (lane index, or

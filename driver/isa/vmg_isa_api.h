@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - direct AIR -> Valhall ISA compiler: interface for vmg_screen.c (programs, shells, cache, hooks).
 #pragma once
 #include <stddef.h>

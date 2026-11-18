@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Per-process driver statistics for Viva Manager (app/): every process that opens the Metal driver keeps one page in
 // VMG_SHM_STATS_DIR/<pid> (MAP_SHARED, mode 0666), updated at most once per second from command buffer completion.
 // No timers: an idle process leaves its last values (updated_ns tells how old they are). Readers check that the pid

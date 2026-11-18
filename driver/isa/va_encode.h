@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Valhall v9 instruction encoder (tables generated from Arm's isa-v9-v14.xml by gen_va_v9.py).
 #pragma once
 #include <stdbool.h>

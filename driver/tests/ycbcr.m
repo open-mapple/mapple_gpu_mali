@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Two-plane 4:2:0 surfaces ('420v', '420f') sampled through YCBCR8_420_2P (500), its sRGB twin (520) and RGB8_420_2P
 // (540), as Photos' thumbnails are: a compute pass samples every texel centre, nearest and linear, on our device and on
 // the Mac's GPU; the results must agree (converted formats within 1.5 of 255, the raw one exactly).

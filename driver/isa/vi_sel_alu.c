@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: arithmetic, comparisons, casts, vectors and the math library (E1-E13, A11).
 //
 // 32-bit values map to one Valhall instruction per component. Half floats (E5) use the packed v2f16 instructions

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - Gallium back-end internals shared by the vmg_*.c files (never included by Objective-C).
 #pragma once
 #include "vmg.h"

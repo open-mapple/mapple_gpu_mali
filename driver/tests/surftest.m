@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // surftest: the GPU draws a known colour into an IOSurface the size of the screen (1125x2436 BGRA, pitch 4608, as
 // backboardd's), for every combination of the kernel's experiment switches (DEVELOPMENT kernels, as root):
 //   kern.mapple_gpu_surf_uncached  new surfaces write-combined

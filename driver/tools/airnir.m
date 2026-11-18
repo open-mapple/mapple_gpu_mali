@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // airnir: translates every function of a .metal / .metallib with vmg_air (AIR -> NIR) and compiles it with a Gallium
 // driver: llvmpipe (default) or Panfrost's Valhall compiler for the Mali-G57 (VMG_DRIVER=panfrost, on the vgpu mock).
 // Usage: airnir file.metal|file.metallib [-v] [function]     (-v prints the NIR)

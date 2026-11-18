@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The ISA compiler's test cases (isa_cases.m) from the command line: one line per case with the ISA result (forced on
 // the ISA path, VMG_ISA_STRICT), the NIR result and the GPU time per draw of both. Exit status 1 when a case fails in
 // the checked mode (ISA, or NIR with -mode nir).

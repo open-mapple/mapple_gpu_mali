@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: textures and samplers (D1-D9).
 //
 // Valhall texturing: one message instruction (TEX_SINGLE / TEX_FETCH / TEX_GATHER, TEX_GRADIENT for explicit

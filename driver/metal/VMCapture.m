@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Pass capture (with the capability trace on, while /private/var/tmp/vmg-capture exists): a render pass with two or more colour attachments that draws a
 // compressed texture (any pass while /private/var/tmp/vmg-capture-all exists too) is written out whole, for tests/cafetch-replay to rebuild: the attachments, each pipeline's
 // descriptor and function constants, every binding and draw in order, the bytes of the buffers each draw has bound

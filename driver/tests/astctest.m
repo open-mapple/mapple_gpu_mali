@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // astctest: an ASTC 4x4 texture through the Metal driver, as PosterBoard's snapshots are stored (Apple's AAPL texture
 // files, *.atx: chunks of u32 length, 4-byte tag, data; the 4x4 blocks row by row in the "astc" chunk after its size). The blocks go in
 // by replaceRegion, by a blit from a buffer and by newTextureWithBytesNoCopy (CoreAnimation's way for these images);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // mpstest: MetalPerformanceShaders / MPSGraph on the installed Metal driver (analysis of the accelerators, item D).
 // CoreImage, Vision, Photos and CoreML use these frameworks; whether they work on our device decides how much GPU work
 // those frameworks can do instead of falling back to the CPU. Each case runs on the GPU and is compared with a CPU

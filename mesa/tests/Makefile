@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Builds the smoke test against out/macos (run ../build.sh macos first).
 HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 OUT ?= $(abspath $(HERE)/../out/macos)

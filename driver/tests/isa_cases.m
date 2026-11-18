@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Test cases of the AIR -> Valhall ISA compiler and their runner (see isa_cases.h). Every case draws or dispatches a
 // minimal pipeline whose shader exercises one feature of docs/ANALISI-ISA-DIRETTA-2026-11-04.md §4, and recomputes
 // the same formula on the CPU. Inputs are deterministic functions of the texel / element index, shared by the setup

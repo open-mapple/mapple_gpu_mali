@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - render and compute pipelines: AIR of the functions -> vmg shaders (vmg_air.c) + fixed-function state.
 // A pipeline whose functions cannot be translated still exists (never nil, as in metal-shim): its draws/dispatches
 // are skipped and -failure says why (logged once).

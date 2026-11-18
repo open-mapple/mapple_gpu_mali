@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * Smoke test for libmesa_mapple.a
  *  (a) llvmpipe + null sw winsys: clear a 64x64 RGBA8 render target, read back

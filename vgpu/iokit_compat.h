@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // IOKit user API: the iOS SDK ships IOKit.framework without headers. When <IOKit/IOKitLib.h> is missing, declare
 // the few functions and constants the Mapple GPU client and the Metal driver use (stable since iOS 2 / macOS 10.0).
 #pragma once

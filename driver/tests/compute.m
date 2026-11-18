@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Compute on the Mapple Metal driver: buffers, threadgroup memory + barriers, atomics, texture writes, dispatchThreads
 // (non-uniform grid), threadgroup arguments, setBytes. Runs on llvmpipe on the Mac.
 // "compute jobs N": N command buffers of one small dispatch each, waited one by one, with the GPU driver's object

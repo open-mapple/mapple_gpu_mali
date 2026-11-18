@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Framebuffer fetch as CoreAnimation uses it: a draw writes colour attachment S, a later draw reads it back with
 // [[color(S)]] and writes the result (plus 0.1) to the other attachment, which is read back. The matrix: S = 0 or 1;
 // S memoryless or private; both draws in one encoder, a memory barrier between them, or two encoders (S stored, then

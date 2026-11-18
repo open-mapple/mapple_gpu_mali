@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple GPU: the real kernel driver through IOKit (VGPU_BACKEND=iokit, default on iOS). See uapi/mapple_gpu_uapi.h.
 #include "vgpu.h"
 #include <errno.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - Gallium back-end: command execution on the GPU queue (render passes, draws, dispatches, blits,
 // fences). See vmg.h.
 #include <time.h>

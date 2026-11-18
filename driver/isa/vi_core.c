@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: IR construction and printing.
 #include "vi.h"
 #include <stdlib.h>

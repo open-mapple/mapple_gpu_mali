@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // TeraScale Metal Shim - driver log, shared with the files that cannot include TSPrivate.h (TSGlass.m uses the
 // legacy OpenGL headers, which do not mix with gl3.h).
 #pragma once

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: instruction selection driver. AIR (LLVM IR, after vmg_air_module_load) -> Valhall IR (vi.h).
 //
 // Control flow (A2): LLVM's blocks are laid out in reverse post-order (loops reducible: back edges are the only

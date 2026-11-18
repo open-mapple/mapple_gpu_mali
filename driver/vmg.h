@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - Gallium back-end: the C interface between the Metal driver (Objective-C, VM*.m) and Mesa
 // (Gallium + NIR, vmg_*.c). Mesa headers stay out of the Objective-C side.
 //

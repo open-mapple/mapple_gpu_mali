@@ -8,4 +8,7 @@ between the two is `docs/uapi.md`.
 
 Checked out at `mapple/gpu/mali` by the [Open Mapple manifest](https://github.com/open-mapple/manifest), which says how to get, build and install it.
 
-Licence: MIT (`LICENSE`, `NOTICE`).
+Licence: GPL-3.0-or-later (`LICENSE`) with an additional term under section 7(b): keep the attribution
+"viva-gpu by Nicola Leone Ciardi - https://github.com/Nik300/viva-gpu" and the credits in `NOTICE`, show them in
+the documentation and any About screen, and mark modified versions as modified. Mesa and its patches, the libdrm
+headers and the tables from Arm's Valhall ISA description keep their MIT licences (`NOTICE`).

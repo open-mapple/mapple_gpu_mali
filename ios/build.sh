@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Builds the Mapple Metal driver for the phone (iOS 16, arm64): Mesa (Panfrost only, no LLVM), libdrm-xnu + vgpu
 # (IOKit back-end), the vmg back-end and the Objective-C driver, packaged as MappleMTLDriver.bundle for
 # /System/Library/Extensions (MetalPluginName = MappleMTLDriver, MetalPluginClassName = VMDevice), plus the test

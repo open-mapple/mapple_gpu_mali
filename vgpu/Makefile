@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Mapple GPU userspace client. `make` builds the static library and the self-test for the Mac (mock back-end).
 CC      = clang
 CFLAGS  = -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-four-char-constants -std=gnu11

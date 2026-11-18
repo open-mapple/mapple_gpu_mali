@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Generates the Valhall v9 (Mali-G57) instruction encoder tables of the direct AIR -> ISA compiler from Arm's ISA
 # description (mesa/src/src/panfrost/compiler/kraid/isa-v9-v14.xml, Copyright Arm Ltd, MIT).
 #

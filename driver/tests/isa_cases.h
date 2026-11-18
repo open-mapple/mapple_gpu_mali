@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Test cases for the AIR -> Valhall ISA compiler (docs/ANALISI-ISA-DIRETTA-2026-11-04.md §2.1, IDs of §4): one or
 // more per feature, each a minimal Metal pipeline whose shader uses only that feature plus trivial plumbing (a
 // full-screen triangle, a grid of points or a compute grid), with a CPU reference of the same formula. Shared by the

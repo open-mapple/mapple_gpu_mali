@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: stage inputs and outputs (B1-B11), FAU and sysvals, following the v9 ABI that Gallium's
 // Panfrost driver expects (docs/ISA-ABI-V9.md).
 //

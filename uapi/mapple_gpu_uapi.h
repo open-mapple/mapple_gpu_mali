@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Mapple GPU: interface between the XNU driver (MappleGPUAccelerator, fork/xnu/patches/01xx-viva-gpu-*) and userspace
 // (vgpu/, used by Mesa's Panfrost through libdrm-xnu and by the Metal driver). Shared by C (userspace) and C++ (kernel).
 //

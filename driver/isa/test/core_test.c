@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Core passes of the ISA compiler on a hand-built shader: RA, flow, packing, then Mesa's Valhall disassembler.
 #include "vi.h"
 #include <stdlib.h>

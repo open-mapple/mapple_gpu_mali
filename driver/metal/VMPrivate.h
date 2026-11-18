@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - private Metal.framework declarations and the driver's classes.
 // The _MTL* base classes are exported by Metal.framework; only the selectors we call or override are declared.
 // Base layer (catch-all, inert objects, log, statistics, pixel format info) comes from metal-shim unchanged; the

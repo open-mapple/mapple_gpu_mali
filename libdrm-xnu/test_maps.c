@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // BO mappings are gone once their BOs are: N BOs created, mapped (drmMap, as Panfrost does), released to the mapping
 // cache (drmUnmap) and closed, half through drmCloseBufferHandle and half through DRM_IOCTL_GEM_CLOSE; then N BOs
 // mapped with vgpu_mmap and closed without an unmap (a client that forgets: the kernel must drop the mapping).

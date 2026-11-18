@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: machine IR for the direct AIR -> Valhall v9 (Mali-G57) path.
 //
 // The IR is Valhall itself: every instruction is an opcode of Arm's ISA description (va_v9_gen.h) with its fields,

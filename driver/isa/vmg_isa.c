@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - direct AIR -> Valhall ISA compiler: driver glue.
 //
 // vmg_isa_compile: AIR (vmg_air_module_load, A1) -> Valhall IR (vi_sel*.c) -> optimization, constants, register

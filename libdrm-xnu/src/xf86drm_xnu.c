@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // libdrm for XNU: the libdrm entry points Mesa's Panfrost uses (SYMBOLS.txt), implemented on the Mapple GPU client
 // (vgpu/, uapi/mapple_gpu_uapi.h). The DRM fd is a vgpu fd; DRM_IOCTL_PANFROST_* and the syncobj ioctls become vgpu
 // selectors with the same structures. A "dma-buf fd" is an IOSurface plane (vmg_drm_surface_fd): importing it maps

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - Gallium back-end: device, resources, state objects, shaders and pipelines (see vmg.h).
 #include "vmg_internal.h"
 #include <errno.h>

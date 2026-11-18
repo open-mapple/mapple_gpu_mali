@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Draw bounds on the CPU (P4 of docs/ANALISI-PRESTAZIONI-2026-11-06.md) and constant-colour clear draws (P5).
 //
 // P4: every CoreAnimation draw comes with a full-framebuffer scissor, and Panfrost renders a batch over the union of

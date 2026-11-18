@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // vmprobe: on the phone, loads /System/Library/Extensions/MappleMTLDriver.bundle directly and creates VMDevice
 // (without Metal.framework's device lookup), then asks Metal for the system device. Checks dyld, symbols, libLLVM
 // and the kernel connection one by one. Usage: vmprobe [bundle path]

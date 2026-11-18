@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Aggregate the samples of ca's VMG_CA_PROFILE (lines "Tn image+0xoff ...", PC first, then callers).
 
   prof.py SAMPLES [IMAGE=BINARY ...] [--thread N] [--top K]

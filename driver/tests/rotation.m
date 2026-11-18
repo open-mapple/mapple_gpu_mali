@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Rotated IOSurface render targets, as CoreAnimation draws landscape into the display's portrait surfaces: a texture
 // with MTLTextureDescriptor's private rotation (quarter turns; width and height swapped for odd turns) over a surface.
 // A draw writes each pixel's position, a second pass loads and stores it again; then, over a surface the CPU filled,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Statistics page for Viva Manager (app/): one page per process in VMG_SHM_STATS_DIR/<pid>, layout in
 // ../vmg_shm_stats.h. Counters that already exist (gTSMtlStats, vgpu calls, AIR cache) are copied in at most once per
 // second, from command buffer completion; command buffer times are summed here. No timer: an idle process costs nothing.

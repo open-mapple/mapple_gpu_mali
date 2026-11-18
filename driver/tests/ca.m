@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // CoreAnimation's own Metal renderer (CARenderer, the engine of iOS's render server in backboardd) on the Mapple
 // driver: a layer tree typical of iOS UI is composed on our device (llvmpipe or Panfrost-on-mock) and on the Mac's
 // real GPU, and the two frames are compared. PNGs go to /tmp/vmg-ca-{mapple,ref}.png.

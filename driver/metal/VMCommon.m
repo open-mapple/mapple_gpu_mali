@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // TeraScale Metal Shim - catch-all forwarding, logging, pixel formats, inert objects.
 #import "VMPrivate.h"
 #import <objc/runtime.h>

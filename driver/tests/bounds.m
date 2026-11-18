@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Draw bounds (vmg_bounds.c, P4/P5): small quads drawn the ways CoreAnimation draws them (a matrix in a constant
 // buffer times a vertex attribute, as fixed_vert_lph_spc; corners chosen by vertex_id from a storage buffer, as
 // path_blit_vert_lph; indexed strips; an off-screen and a partly off-screen quad) and a first-draw constant clear, on

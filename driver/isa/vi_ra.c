@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: liveness and register allocation.
 //
 // Linear scan over the final block layout. Each virtual register gets one interval (the hull of every point where

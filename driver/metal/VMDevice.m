@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple Metal - the device. _MTLDevice implements libraries, functions and family queries; we supply the driver part
 // (resources, queues, pipelines, limits) on vmg (Gallium: llvmpipe on the Mac, Panfrost on the phone).
 //

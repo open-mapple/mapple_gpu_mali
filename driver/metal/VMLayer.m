@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // TeraScale Metal Shim - CAMetalLayer tuning for layers that present our drawables.
 // Presentation through CoreAnimation takes ~27 ms from commit to screen here (measured with
 // build/window TIMELINE=1), against ~16 ms on a real Metal driver. With 2 drawables a layer can

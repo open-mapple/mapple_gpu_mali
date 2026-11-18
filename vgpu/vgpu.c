@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple GPU userspace client: fd table and dispatch to the back-end (see vgpu.h).
 #include "vgpu.h"
 #include <errno.h>

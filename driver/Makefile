@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Mapple Metal driver (macOS build for tests: llvmpipe, and Panfrost on the vgpu mock).
 # Needs ../mesa/out/macos (mesa/build.sh macos).
 CC        = clang

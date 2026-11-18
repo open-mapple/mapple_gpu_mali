@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // vctl: drives the phone's UI from the USB link (mapple-link.py run -- /private/var/root/mapple-dev/vctl ...), so the
 // driver can be tested on real screens without anyone holding the phone.
 //   vctl open BUNDLE-ID              launch / bring an app to the front (com.apple.Preferences, ...)

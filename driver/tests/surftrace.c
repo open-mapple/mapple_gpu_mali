@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // surftrace: every IOSurface call of a process (DYLD_INSERT_LIBRARIES), its first four arguments and its result on
 // stderr while SURFTRACE is set in the environment (phototest sets it around one CoreImage render). The functions are
 // the public IOSurface API (IOSurfaceRef.h) both this iOS and macOS export: integer and pointer arguments and results

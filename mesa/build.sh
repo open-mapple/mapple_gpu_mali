@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Build Mesa (llvmpipe + panfrost/Valhall, static) for the ios-viva project.
 #
 #   ./build.sh macos         full build: venv, fetch+patch, configure, build,

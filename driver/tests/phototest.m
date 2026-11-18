@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // phototest: one image through each stage Photos' thumbnails and the photo poster go through, each output checked for
 // all-zero pixels: ImageIO decode, CGImageSourceCreateThumbnailAtIndex, IOSurfaceAccelerator (the scaler service,
 // mp_scaler), a VideoToolbox pixel transfer, CoreImage on Metal and with the software renderer; each stage's time

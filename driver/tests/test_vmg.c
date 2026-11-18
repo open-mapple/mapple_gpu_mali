@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Back-end smoke test without Metal: device, buffer, texture, clear pass, readback, fence.
 // llvmpipe really renders; Panfrost on the vgpu mock builds and "submits" the job chains (nothing executes, so the
 // readback is not checked there).

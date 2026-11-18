@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // What a render pass costs on the phone's GPU: full-screen passes (the size of CoreAnimation's framebuffer) on a
 // linear IOSurface (what backboardd renders into) and on a private texture (Panfrost: AFBC), with each load/store
 // combination, and full-screen blended draws within one pass. Times are commit -> completed, median of the runs.

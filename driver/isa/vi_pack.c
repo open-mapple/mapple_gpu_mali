@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Mapple ISA compiler: constant lowering, blend-shader prologs, layout and encoding.
 #include "vi.h"
 #include <stdlib.h>

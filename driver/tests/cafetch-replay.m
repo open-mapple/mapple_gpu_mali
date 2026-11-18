@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // cafetch-replay: a render pass captured by the driver (VMCapture.m: VMG_SHM_STATS_DIR/pass-<pid>-<n>/script.txt and
 // its blobs) drawn again from the same library, with the same pipelines (formats, write masks, blending, function
 // constants), bindings and draws; attachment 0 read back and summed up (and written as a PPM). Overrides change one

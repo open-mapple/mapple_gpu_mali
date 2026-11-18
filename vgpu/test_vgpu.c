@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // vgpu self-test: BO life cycle, CPU mappings, syncobjs, submit, IOSurface import. Runs against the mock on the Mac
 // and unchanged against the kernel (VGPU_BACKEND=iokit) on the phone, where submit needs a valid job chain (skipped).
 #include "vgpu.h"
