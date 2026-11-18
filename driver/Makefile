@@ -51,13 +51,14 @@ FRAMEWORKS = -framework Foundation -framework Metal -framework IOSurface -framew
 $(OUT)/libMappleMetal.dylib: $(M_DRV) $(M_HDR) $(OUT)/libvmg.a
 	@$(CC) $(OBJC) -dynamiclib -install_name @rpath/libMappleMetal.dylib $(M_DRV) $(OUT)/libvmg.a $(MESA_LD) $(FRAMEWORKS) -o $@
 
-SHIM_TESTS = phase1 phase3 translate uploads
+SHIM_TESTS = $(if $(wildcard $(SHIM)/tests),phase1 phase3 translate uploads)
 $(OUT)/phase3: $(SHIM)/tests/phase2.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) -DTS_TRANSLATED -I$(SHIM)/src $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
 $(OUT)/phase1 $(OUT)/translate $(OUT)/uploads: $(OUT)/%: $(SHIM)/tests/%.m $(OUT)/libMappleMetal.dylib
 	@$(CC) $(OBJC) -I$(SHIM)/src $< -L$(OUT) -lMappleMetal -Wl,-rpath,@executable_path $(FRAMEWORKS) -framework Cocoa -o $@
 
 metal: $(OUT)/libMappleMetal.dylib $(addprefix $(OUT)/,$(SHIM_TESTS)) $(OUT)/compute $(OUT)/fbfetch $(OUT)/cafetch-replay $(OUT)/ca $(OUT)/isatest $(OUT)/bounds $(OUT)/rotation $(OUT)/ycbcr $(OUT)/xr
+	@$(if $(SHIM_TESTS),:,echo "metal: $(SHIM)/tests is missing, phase1, phase3, translate and uploads not built")
 test-metal: metal
 	@for t in $(SHIM_TESTS); do echo "== $$t (llvmpipe)"; $(OUT)/$$t | tail -2 || exit 1; done
 $(OUT)/compute: tests/compute.m $(OUT)/libMappleMetal.dylib
